@@ -1,4 +1,4 @@
-### vLLM Composer
+# vllm_composer
 
 Package for setting up a reverse proxy to compose multiple vLLM instances.
 

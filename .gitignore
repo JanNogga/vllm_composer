@@ -1,0 +1,9 @@
+.vscode
+
+middleware/config.yml
+middleware/secrets.yml
+
+caddy/data/*
+caddy/config/*
+
+!.gitkeep

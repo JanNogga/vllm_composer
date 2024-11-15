@@ -1,0 +1,33 @@
+services:
+  caddy:
+    image: caddy
+    container_name: caddy
+    restart: unless-stopped
+    volumes:
+      - ${CADDYFILE_PATH}:/etc/caddy/Caddyfile
+      - ${CADDY_DATA_PATH}:/data
+      - ${CADDY_CONFIG_PATH}:/config
+      - ${CERT_PATH}:/etc/ssl/cert.pem
+      - ${KEY_PATH}:/etc/ssl/server.key
+    ports:
+      - "443:443"
+    networks:
+      - internal_network
+
+  middleware:
+    build:
+      context: ./middleware
+      dockerfile: Dockerfile
+    container_name: middleware
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./middleware/config.yml:/app/config.yml
+      - ./middleware/secrets.yml:/app/secrets.yml
+    networks:
+      - internal_network
+
+networks:
+  internal_network:
+    driver: bridge

@@ -1,0 +1,11 @@
+https://api.somewhere.com {
+    tls /etc/ssl/cert.pem /etc/ssl/server.key
+
+    handle /v1/* {
+        reverse_proxy localhost:9000
+    }
+
+    handle {
+        respond "404 Not Found" 404
+    }
+}

@@ -1,9 +1,10 @@
 FROM python:3.10-slim
 
 WORKDIR /app
-COPY app.py requirements.txt config.yml secrets.yml util.py ./
 
-RUN pip install --no-cache-dir -r requirements.txt uvicorn
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app.py config.yml secrets.yml util.py ./
 
 EXPOSE 9000
 

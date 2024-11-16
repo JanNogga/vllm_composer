@@ -1,9 +1,13 @@
 import re
 import yaml
 import httpx
-from collections import defaultdict
+import asyncio
 from typing import Optional
+from cachetools import TTLCache
+from collections import defaultdict
+from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, HTTPException
+from fastapi_utils.tasks import repeat_every
 from fastapi.responses import JSONResponse, StreamingResponse
 
 
@@ -13,6 +17,18 @@ class vllmComposer:
         self.model_owner = 'unknown'
         self.group_tokens = {}
         self.vllm_token = None
+
+        # Caches
+        self.metrics_cache = TTLCache(maxsize=100, ttl=10)
+        self.model_cache = TTLCache(maxsize=100, ttl=20)
+
+        # Server health tracking
+        self.server_health = {}
+        self.failure_counts = defaultdict(int)
+        self.circuit_breaker_timeout = {}
+        self.max_failures = 3
+        self.cooldown_period = None
+
         self.load_config(config_path)
         self.load_secrets(secrets_path)
 
@@ -26,11 +42,18 @@ class vllmComposer:
             ports = range(host["ports"]["start"], host["ports"]["end"] + 1)
             allowed_groups = host["allowed_groups"]
             self.servers.extend([
-                {"url": f"http://{hostname}:{port}", "allowed_groups": allowed_groups}
+                {"url": f"{hostname if hostname.startswith(('http://', 'https://')) else f'http://{hostname}'}:{port}", "allowed_groups": allowed_groups}
                 for port in ports
             ])
         app_settings = config.get("app_settings", {})
         self.model_owner = app_settings.get("model_owner", "unknown")
+        # Load circuit breaker settings from config
+        self.max_failures = app_settings.get("max_failures", 3)
+        cooldown_minutes = app_settings.get("cooldown_period_minutes", 5)
+        self.cooldown_period = timedelta(minutes=cooldown_minutes)
+
+        # Initialize health for each server
+        self.server_health = {server["url"]: {"healthy": True, "last_checked": None} for server in self.servers}
 
     def load_secrets(self, secrets_path: str):
         with open(secrets_path, "r") as file:
@@ -40,40 +63,47 @@ class vllmComposer:
         self.group_tokens = secrets.get("groups", {})
         self.vllm_token = secrets.get("vllm_token")
 
+    async def check_circuit_breaker(self, server_url: str) -> bool:
+        now = datetime.utcnow()
+
+        # Check if server is in cooldown
+        if server_url in self.circuit_breaker_timeout and self.circuit_breaker_timeout[server_url] > now:
+            return False
+
+        # Reset failure count if cooldown period has passed
+        if server_url in self.circuit_breaker_timeout:
+            del self.circuit_breaker_timeout[server_url]
+            self.failure_counts[server_url] = 0
+
+        return True
+    
+    async def handle_server_failure(self, server_url: str):
+        """Handle a server failure and open the circuit if necessary."""
+        self.failure_counts[server_url] += 1
+
+        if self.failure_counts[server_url] >= self.max_failures:
+            self.circuit_breaker_timeout[server_url] = datetime.utcnow() + self.cooldown_period
+            print(f"Server {server_url} disabled due to repeated failures.")
+    
+        # Mark the server as unhealthy
+        await self.update_server_health(server_url, is_healthy=False)
+
+
     def get_group_for_token(self, token: str) -> Optional[str]:
         """Get the group associated with a token."""
         for group, tokens in self.group_tokens.items():
             if token in tokens:
                 return group
         return None
-    
-    async def get_model_on_server(self, server_url: str) -> str | None:
-        url = f"http://{server_url}/v1/models"
-        headers = {
-            "Authorization": f"Bearer {self.vllm_token}"
-        }
 
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.get(url, headers=headers)
-                response.raise_for_status()
-                data = response.json()
-
-                # Extract the model ID
-                models = data.get("data", [])
-                if models:
-                    # Assuming the first model is the one to be determined
-                    return models[0]
-            except httpx.RequestError as exc:
-                print(f"Request error while fetching model from {server_url}: {exc}")
-            except KeyError:
-                print(f"Unexpected response format from {server_url}: {response.text}")
-
-        return None
-    
     async def get_server_load(self, server_url: str) -> float | None:
-        url = f"http://{server_url}/metrics"
+        if not await self.is_server_healthy(server_url):
+            return None
+        # Check cache first
+        if server_url in self.metrics_cache:
+            return self.metrics_cache[server_url]
 
+        url = f"{server_url}/metrics"
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(url)
@@ -89,14 +119,74 @@ class vllmComposer:
                         pending_requests += float(line.split()[-1])
 
                 total_load = current_requests + pending_requests
+                self.metrics_cache[server_url] = total_load  # Update cache
+                await self.update_server_health(server_url, is_healthy=True)
                 return total_load
-            except httpx.RequestError as exc:
-                print(f"Request error while fetching load from {server_url}: {exc}")
-            except ValueError:
-                print(f"Unexpected metrics format from {server_url}: {response.text}")
+            except Exception as exc:
+                await self.handle_server_failure(server_url)
+                print(f"Error fetching metrics from {server_url}: {exc}")
+                return None
 
-        return None
-    
+    async def get_model_on_server(self, server_url: str) -> str | None:
+        if not await self.is_server_healthy(server_url):
+            return None
+        # Check cache first
+        if server_url in self.model_cache:
+            return self.model_cache[server_url]
+
+        url = f"{server_url}/v1/models"
+        headers = {"Authorization": f"Bearer {self.vllm_token}"}
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+
+                # Extract the model ID
+                models = data.get("data", [])
+                if models:
+                    model_id = models[0]
+                    self.model_cache[server_url] = model_id  # Update cache
+                    await self.update_server_health(server_url, is_healthy=True)
+                    return model_id
+            except Exception as exc:
+                await self.handle_server_failure(server_url)
+                print(f"Error fetching model from {server_url}: {exc}")
+                return None
+
+    async def update_server_health(self, server_url: str, is_healthy: bool):
+        """Update the health status of a server."""
+        self.server_health[server_url] = {
+            "healthy": is_healthy,
+            "last_checked": datetime.utcnow()
+        }
+        if is_healthy:
+            self.failure_counts[server_url] = 0
+
+    async def is_server_healthy(self, server_url: str) -> bool:
+        """Check if a server is healthy."""
+        if not await self.check_circuit_breaker(server_url):
+            return False
+        health_info = self.server_health.get(server_url, {"healthy": True})
+        return health_info["healthy"]
+
+    @repeat_every(seconds=20)
+    async def refresh_models(self):
+        """Periodically refresh model caches."""
+        tasks = []
+        for server in self.servers:
+            tasks.append(self.get_model_on_server(server["url"]))
+        await asyncio.gather(*tasks)
+
+    @repeat_every(seconds=10)
+    async def refresh_metrics(self):
+        """Periodically refresh metrics and model caches."""
+        tasks = []
+        for server in self.servers:
+            tasks.append(self.get_server_load(server["url"]))
+        await asyncio.gather(*tasks)
+
     async def get_compatible_servers(self, target_model_id: str, user_group: str) -> list[str]:
         compatible_servers = []
         for server in self.servers:
@@ -104,7 +194,7 @@ class vllmComposer:
             allowed_groups = server["allowed_groups"]
 
             # Check if the server is available for the user's group
-            if user_group not in allowed_groups:
+            if user_group not in allowed_groups or not await self.is_server_healthy(server_url):
                 continue
 
             # Check if the server provides the target model
@@ -127,46 +217,31 @@ class vllmComposer:
                 least_loaded_server = server_url
 
         return least_loaded_server
-    
+
     async def handle_models_request(self, user_group: str) -> JSONResponse:
-        """
-        Handle /v1/models request by aggregating models that the user's group has access to.
-
-        Args:
-            user_group (str): The group of the user making the request.
-
-        Returns:
-            JSONResponse: A response containing the list of models accessible to the user's group,
-                        formatted as specified.
-        """
         models_data = []
 
         for server in self.servers:
             server_url = server["url"]
             allowed_groups = server["allowed_groups"]
 
-            # Skip servers not accessible to the user's group
-            if user_group not in allowed_groups:
+            if user_group not in allowed_groups or not await self.is_server_healthy(server_url):
                 continue
 
-            # Use get_model_on_server to fetch model data
             server_models = await self.get_model_on_server(server_url)
             if server_models:
                 models_data.extend(server_models.get("data", []))
 
-        # Format the response as specified
         formatted_models = {}
         for model in models_data:
             model_id = model['id']
             created_timestamp = model['created']
 
             if model_id in formatted_models:
-                # Update the 'created' timestamp to the oldest one
                 formatted_models[model_id]['created'] = min(
                     formatted_models[model_id]['created'], created_timestamp
                 )
             else:
-                # Add new entry to formatted models
                 formatted_models[model_id] = {
                     'id': model_id,
                     'object': 'model',
@@ -174,15 +249,28 @@ class vllmComposer:
                     'owned_by': self.model_owner,
                 }
 
-        # Convert formatted models to a list
         models_list = list(formatted_models.values())
-
         return JSONResponse(content={"object": "list", "data": models_list})
 
 
-# Instantiate the app and backend configuration
+# FastAPI app instantiation
 app = FastAPI()
-composer = vllmComposer("config.yml")
+composer = vllmComposer("config.yml", "secrets.yml")
+
+@app.get("/health")
+async def health_check():
+    """Return health and cache status for all servers."""
+    health_data = []
+    for server in composer.servers:
+        server_url = server["url"]
+        health_data.append({
+            "url": server_url,
+            "healthy": composer.server_health.get(server_url, {}).get("healthy", True),
+            "metrics_cached": composer.metrics_cache.get(server_url),
+            "model_cached": composer.model_cache.get(server_url)
+        })
+    return JSONResponse(content={"servers": health_data})
+
 
 @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def proxy_request(path: str, request: Request):
@@ -226,7 +314,7 @@ async def proxy_request(path: str, request: Request):
         raise HTTPException(status_code=503, detail="Service Unavailable: No available servers with sufficient capacity")
     
     # Step 6: Replace user's token with self.vllm_token and forward the request
-    url = f"http://{least_loaded_server}/v1/{path}"
+    url = f"{least_loaded_server}/v1/{path}"
     headers = {key: value for key, value in request.headers.items() if key.lower() != "authorization"}
     headers["Authorization"] = f"Bearer {composer.vllm_token}"
 

@@ -34,3 +34,5 @@ vllm_hosts:
       - "legacy"
 app_settings:
   model_owner: "me"
+  max_failures: 3
+  cooldown_period_minutes: 5

@@ -9,6 +9,10 @@ https://api.somewhere.com {
         reverse_proxy localhost:9000
     }
 
+    handle /health {
+        reverse_proxy localhost:9000
+    }
+
     handle {
         respond "404 Not Found" 404
     }

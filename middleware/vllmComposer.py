@@ -52,7 +52,7 @@ class vllmComposer:
             ports = range(host["ports"]["start"], host["ports"]["end"] + 1)
             allowed_groups = host["allowed_groups"]
             self.servers.extend([
-                {"url": f"{hostname if hostname.startswith(('http://', 'https://')) else f'http://{hostname}'}:{port}", "allowed_groups": allowed_groups}
+                {"url": f"{hostname if (hostname.startswith(('http://', 'https://')) or hostname in ['localhost', '127.0.0.1']) else f'http://{hostname}'}:{port}", "allowed_groups": allowed_groups}
                 for port in ports
             ])
         app_settings = config.get("app_settings", {})

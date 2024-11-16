@@ -1,87 +1,74 @@
 import pytest
-import logging
 from vllmComposer import vllmComposer
-from pathlib import Path
 from datetime import timedelta
+import logging
+
+from tests.utils import create_mock_config_from_templates
 
 @pytest.fixture
-def mock_config_and_secrets(tmp_path: Path):
-    config_path = tmp_path / "config.yml"
-    secrets_path = tmp_path / "secrets.yml"
-
-    # Mock config.yml content
-    config_content = """
-    vllm_hosts:
-      - hostname: "localhost"
-        ports: {start: 8000, end: 8001}
-        allowed_groups: ["group1"]
-    app_settings:
-      model_owner: "test-owner"
-      max_failures: 3
-      cooldown_period_minutes: 5
-      log_level: "warning"
-    """
-    config_path.write_text(config_content)
-
-    # Mock secrets.yml content
-    secrets_content = """
-    groups:
-      group1: ["token1", "token2"]
-      group2: ["token3"]
-    vllm_token: "dummy_token"
-    """
-    secrets_path.write_text(secrets_content)
-
-    return str(config_path), str(secrets_path)
+def mock_config_and_secrets(tmp_path):
+  return create_mock_config_from_templates(tmp_path)
 
 
 def test_load_config(mock_config_and_secrets):
-    # Use the fixture to get the mock config and secrets paths
-    config_path, secrets_path = mock_config_and_secrets
-
-    # Instantiate the composer with the mock config and secrets paths
+    config_path, secrets_path, config_dict, _ = mock_config_and_secrets
     composer = vllmComposer(config_path=config_path, secrets_path=secrets_path)
 
     # Validate servers list
     expected_servers = [
-        {"url": "http://localhost:8000", "allowed_groups": ["group1"]},
-        {"url": "http://localhost:8001", "allowed_groups": ["group1"]},
+        {"url": f"http://{host['hostname']}:{port}", "allowed_groups": host["allowed_groups"]}
+        for host in config_dict["vllm_hosts"]
+        for port in range(host["ports"]["start"], host["ports"]["end"] + 1)
     ]
     assert composer.servers == expected_servers
 
     # Validate app settings
-    assert composer.model_owner == "test-owner"
-    assert composer.max_failures == 3
-    assert composer.cooldown_period == timedelta(minutes=5)
+    app_settings = config_dict["app_settings"]
+    assert composer.model_owner == app_settings["model_owner"]
+    assert composer.max_failures == app_settings["max_failures"]
+    assert composer.cooldown_period == timedelta(minutes=app_settings["cooldown_period_minutes"])
 
     # Validate server health initialization
     expected_health = {server["url"]: {"healthy": True, "last_checked": None} for server in expected_servers}
     assert composer.server_health == expected_health
 
     # Validate logger settings
-    assert composer.logger.level == logging.WARNING
+    log_levels = {
+        "critical": logging.CRITICAL,
+        "error": logging.ERROR,
+        "warning": logging.WARNING,
+        "info": logging.INFO,
+        "debug": logging.DEBUG,
+        "notset": logging.NOTSET,
+    }
+    assert composer.logger.level == log_levels[app_settings["log_level"].lower()]
 
 def test_load_secrets(mock_config_and_secrets):
-    # Use the fixture to get the mock config and secrets paths
-    config_path, secrets_path = mock_config_and_secrets
-
-    # Instantiate the composer with the mock paths
+    config_path, secrets_path, _, secrets_dict = mock_config_and_secrets
     composer = vllmComposer(config_path=config_path, secrets_path=secrets_path)
 
-    # Validate group tokens
+    # Normalize secrets_dict["groups"] to match the format of composer.group_tokens
     expected_group_tokens = {
-        "group1": ["token1", "token2"],
-        "group2": ["token3"],
+        group: tokens for group_entry in secrets_dict["groups"] for group, tokens in group_entry.items()
     }
+
+    # Validate group tokens
     assert composer.group_tokens == expected_group_tokens
 
     # Validate VLLM token
-    assert composer.vllm_token == "dummy_token"
+    assert composer.vllm_token == secrets_dict["vllm_token"]
 
 def test_get_group_for_token(mock_config_and_secrets):
-    config_path, secrets_path = mock_config_and_secrets
+    config_path, secrets_path, _, secrets_dict = mock_config_and_secrets
     composer = vllmComposer(config_path=config_path, secrets_path=secrets_path)
 
-    assert composer.get_group_for_token("token1") == "group1"
-    assert composer.get_group_for_token("token3") == "group2"
+    # Iterate through the list of group dictionaries
+    for group_entry in secrets_dict["groups"]:
+        # Each group_entry is a dictionary with one key (the group name)
+        for group, tokens in group_entry.items():
+            # Assert for each token in the group
+            for token in tokens:
+                assert composer.get_group_for_token(token) == group
+
+    # Validate an invalid token
     assert composer.get_group_for_token("invalid_token") is None

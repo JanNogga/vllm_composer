@@ -75,7 +75,8 @@ class vllmComposer:
             secrets = yaml.safe_load(file)
         
         # Parse group tokens
-        self.group_tokens = secrets.get("groups", {})
+        groups = secrets.get("groups", [])
+        self.group_tokens = {group: tokens for group_entry in groups for group, tokens in group_entry.items()}
         self.vllm_token = secrets.get("vllm_token")
         self.logger.info("Secrets loaded successfully.")
 

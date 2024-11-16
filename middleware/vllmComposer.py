@@ -1,3 +1,4 @@
+import re
 import yaml
 import httpx
 import asyncio
@@ -129,11 +130,20 @@ class vllmComposer:
 
                 # Process metrics data
                 current_requests, pending_requests = 0, 0
+                self.logger.debug("Processing metrics data:")
                 for line in metrics_data.splitlines():
+                    line = line.strip() 
+                    self.logger.debug(f"Line: {line}")
                     if line.startswith("vllm:num_requests_running"):
-                        current_requests += float(line.split()[-1])
+                        match = re.search(r'(\d+(\.\d+)?)$', line)
+                        if match:
+                            current_requests += float(match.group(1))
+                            self.logger.debug(f"Found running requests: {match.group(1)}")
                     elif line.startswith("vllm:num_requests_waiting"):
-                        pending_requests += float(line.split()[-1])
+                        match = re.search(r'(\d+(\.\d+)?)$', line)
+                        if match:
+                            pending_requests += float(match.group(1))
+                            self.logger.debug(f"Found waiting requests: {match.group(1)}")
 
                 total_load = current_requests + pending_requests
                 self.metrics_cache[server_url] = total_load  # Update cache

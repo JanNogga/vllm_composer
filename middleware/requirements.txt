@@ -1,4 +1,6 @@
 fastapi
-uvicorn
+fastapi-utils
 httpx
-pyyaml
+PyYAML
+cachetools
+uvicorn

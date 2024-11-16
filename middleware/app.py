@@ -2,6 +2,7 @@ import re
 import yaml
 import httpx
 import asyncio
+import logging
 from typing import Optional
 from cachetools import TTLCache
 from collections import defaultdict
@@ -29,6 +30,17 @@ class vllmComposer:
         self.max_failures = 3
         self.cooldown_period = None
 
+        # Logging
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.INFO)
+        console_handler = logging.StreamHandler()
+        file_handler = logging.FileHandler("app.log")
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        console_handler.setFormatter(formatter)
+        file_handler.setFormatter(formatter)
+        self.logger.addHandler(console_handler)
+        self.logger.addHandler(file_handler)
+
         self.load_config(config_path)
         self.load_secrets(secrets_path)
 
@@ -52,8 +64,13 @@ class vllmComposer:
         cooldown_minutes = app_settings.get("cooldown_period_minutes", 5)
         self.cooldown_period = timedelta(minutes=cooldown_minutes)
 
+        # Configure logger
+        log_level = app_settings.get("log_level", "INFO").upper()
+        self.logger.setLevel(getattr(logging, log_level, logging.INFO))
+
         # Initialize health for each server
         self.server_health = {server["url"]: {"healthy": True, "last_checked": None} for server in self.servers}
+        self.logger.info("Configuration loaded successfully.")
 
     def load_secrets(self, secrets_path: str):
         with open(secrets_path, "r") as file:
@@ -62,6 +79,7 @@ class vllmComposer:
         # Parse group tokens
         self.group_tokens = secrets.get("groups", {})
         self.vllm_token = secrets.get("vllm_token")
+        self.logger.info("Secrets loaded successfully.")
 
     async def check_circuit_breaker(self, server_url: str) -> bool:
         now = datetime.utcnow()
@@ -83,7 +101,7 @@ class vllmComposer:
 
         if self.failure_counts[server_url] >= self.max_failures:
             self.circuit_breaker_timeout[server_url] = datetime.utcnow() + self.cooldown_period
-            print(f"Server {server_url} disabled due to repeated failures.")
+            self.logger.warning(f"Server {server_url} disabled due to repeated failures.")
     
         # Mark the server as unhealthy
         await self.update_server_health(server_url, is_healthy=False)
@@ -121,10 +139,11 @@ class vllmComposer:
                 total_load = current_requests + pending_requests
                 self.metrics_cache[server_url] = total_load  # Update cache
                 await self.update_server_health(server_url, is_healthy=True)
+                self.logger.info(f"Metrics fetched for {server_url}: Load = {total_load}")
                 return total_load
             except Exception as exc:
                 await self.handle_server_failure(server_url)
-                print(f"Error fetching metrics from {server_url}: {exc}")
+                self.logger.error(f"Error fetching metrics from {server_url}: {exc}")
                 return None
 
     async def get_model_on_server(self, server_url: str) -> str | None:
@@ -149,10 +168,11 @@ class vllmComposer:
                     model_id = models[0]
                     self.model_cache[server_url] = model_id  # Update cache
                     await self.update_server_health(server_url, is_healthy=True)
+                    self.logger.info(f"Model fetched for {server_url}: Model ID = {model_id}")
                     return model_id
             except Exception as exc:
                 await self.handle_server_failure(server_url)
-                print(f"Error fetching model from {server_url}: {exc}")
+                self.logger.error(f"Error fetching model from {server_url}: {exc}")
                 return None
 
     async def update_server_health(self, server_url: str, is_healthy: bool):
@@ -302,6 +322,7 @@ async def proxy_request(path: str, request: Request):
             raise HTTPException(status_code=400, detail="Bad Request: Missing 'model' in payload")
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Bad Request: Invalid JSON payload ({str(exc)})")
+    composer.logger.info(f"Received request for model '{target_model_name}' from group '{user_group}'.")
 
     # Step 4: Find compatible servers
     compatible_servers = await composer.get_compatible_servers(target_model_name, user_group)
@@ -312,6 +333,7 @@ async def proxy_request(path: str, request: Request):
     least_loaded_server = await composer.get_least_utilized_server(compatible_servers)
     if not least_loaded_server:
         raise HTTPException(status_code=503, detail="Service Unavailable: No available servers with sufficient capacity")
+    composer.logger.info(f"Least loaded server for model '{target_model_name}': {least_loaded_server}. Forwarding request...")
     
     # Step 6: Replace user's token with self.vllm_token and forward the request
     url = f"{least_loaded_server}/v1/{path}"
@@ -419,7 +441,7 @@ async def get_aggregated_metrics():
                 raw_metrics = response.text
                 parse_metrics(raw_metrics, metrics_data)
             except httpx.RequestError as exc:
-                print(f"Error fetching metrics from {server_url}: {exc}")
+                composer.logger.error(f"Error fetching metrics from {server_url}: {exc}")
                 continue
 
     return JSONResponse(content=metrics_data)

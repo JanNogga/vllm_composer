@@ -1,4 +1,6 @@
 .vscode
+__pycache__
+app.log
 
 middleware/config.yml
 middleware/secrets.yml

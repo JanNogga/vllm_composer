@@ -1,6 +1,16 @@
+# core
 fastapi
 fastapi-utils
 httpx
 PyYAML
 cachetools
 uvicorn
+typing_inspect
+
+# testing
+pytest
+pytest-asyncio
+httpx[http2]
+pytest-mock
+respx
+pytest-cov

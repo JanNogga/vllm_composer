@@ -3,12 +3,6 @@ from vllmComposer import vllmComposer
 from datetime import timedelta
 import logging
 
-from tests.utils import create_mock_config_from_templates
-
-@pytest.fixture
-def mock_config_and_secrets(tmp_path):
-  return create_mock_config_from_templates(tmp_path)
-
 
 def test_load_config(mock_config_and_secrets):
     config_path, secrets_path, config_dict, _ = mock_config_and_secrets

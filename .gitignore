@@ -8,4 +8,7 @@ middleware/secrets.yml
 caddy/data/*
 caddy/config/*
 
+.coverage
+htmlcov/
+
 !.gitkeep

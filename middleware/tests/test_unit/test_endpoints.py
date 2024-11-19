@@ -1,14 +1,11 @@
 import pytest
+import json
 import httpx
 from httpx import Request, Response
-from vllmComposer import vllmComposer
-from tests.utils import create_mock_config_from_templates
+from fastapi.responses import JSONResponse
 from unittest.mock import AsyncMock, patch, MagicMock
+from vllmComposer import vllmComposer
 
-@pytest.fixture
-def setup_composer(tmp_path):
-    config_path, secrets_path, _, _ = create_mock_config_from_templates(tmp_path)
-    return vllmComposer(config_path, secrets_path)
 
 @pytest.mark.asyncio
 async def test_get_server_load_success(setup_composer):
@@ -187,6 +184,33 @@ async def test_get_server_load_failure(setup_composer):
         load = await composer.get_server_load(server_url)
         assert load is None, "Failed requests should return None."
 
+@pytest.mark.asyncio
+async def test_get_server_load_unhealthy_server(mock_config_and_secrets):
+    config_path, secrets_path, _, _ = mock_config_and_secrets
+    composer = vllmComposer(config_path=config_path, secrets_path=secrets_path)
+
+    server_url = "http://server1:8000"
+    composer.servers = [{"url": server_url, "allowed_groups": ["group1"]}]
+    composer.server_health[server_url] = {"healthy": False, "last_checked": None}  # Mark server as unhealthy
+
+    server_load = await composer.get_server_load(server_url)
+
+    # Validate that the load is None
+    assert server_load is None
+
+@pytest.mark.asyncio
+async def test_get_server_load_cache_hit(mock_config_and_secrets):
+    config_path, secrets_path, _, _ = mock_config_and_secrets
+    composer = vllmComposer(config_path=config_path, secrets_path=secrets_path)
+
+    server_url = "http://server1:8000"
+    composer.servers = [{"url": server_url, "allowed_groups": ["group1"]}]
+    composer.metrics_cache[server_url] = 42.0  # Add a mock value to the cache
+
+    server_load = await composer.get_server_load(server_url)
+
+    # Validate that the cached value is returned
+    assert server_load == 42.0
 
 @pytest.mark.asyncio
 async def test_get_model_on_server_success(setup_composer):
@@ -219,6 +243,36 @@ async def test_get_model_on_server_failure(setup_composer):
         assert model is None, "Failed requests should return None."
 
 @pytest.mark.asyncio
+async def test_get_model_on_server_unhealthy_server(mock_config_and_secrets):
+    config_path, secrets_path, _, _ = mock_config_and_secrets
+    composer = vllmComposer(config_path=config_path, secrets_path=secrets_path)
+
+    server_url = "http://server1:8000"
+    composer.servers = [{"url": server_url, "allowed_groups": ["group1"]}]
+    composer.server_health[server_url] = {"healthy": False, "last_checked": None}  # Mark server as unhealthy
+
+    model = await composer.get_model_on_server(server_url)
+
+    # Validate that the model is None
+    assert model is None
+
+
+@pytest.mark.asyncio
+async def test_get_model_on_server_cache_hit(mock_config_and_secrets):
+    config_path, secrets_path, _, _ = mock_config_and_secrets
+    composer = vllmComposer(config_path=config_path, secrets_path=secrets_path)
+
+    server_url = "http://server1:8000"
+    composer.servers = [{"url": server_url, "allowed_groups": ["group1"]}]
+    composer.model_cache[server_url] = {"id": "mock_model"}  # Add a mock value to the cache
+
+    model = await composer.get_model_on_server(server_url)
+
+    # Validate that the cached value is returned
+    assert model == {"id": "mock_model"}
+
+
+@pytest.mark.asyncio
 async def test_get_server_load_timeout(setup_composer):
     composer = setup_composer
     server_url = "http://mockserver:8080"
@@ -237,3 +291,56 @@ async def test_get_model_on_server_timeout(setup_composer):
     with patch("httpx.AsyncClient.get", AsyncMock(side_effect=httpx.TimeoutException("Request timed out"))):
         model = await composer.get_model_on_server(server_url)
         assert model is None, "Timeout should result in a None return value."
+
+@pytest.mark.asyncio
+async def test_handle_models_request(mock_config_and_secrets):
+    config_path, secrets_path, _, _ = mock_config_and_secrets
+    composer = vllmComposer(config_path=config_path, secrets_path=secrets_path)
+
+    # Mock servers
+    composer.servers = [
+        {"url": "http://server1:8000", "allowed_groups": ["group1"]},
+        {"url": "http://server2:8000", "allowed_groups": ["group2"]},
+        {"url": "http://server3:8000", "allowed_groups": ["group1", "group2"]},
+    ]
+    composer.server_health = {
+        "http://server1:8000": {"healthy": True, "last_checked": None},
+        "http://server2:8000": {"healthy": True, "last_checked": None},
+        "http://server3:8000": {"healthy": True, "last_checked": None},
+    }
+
+    # Mock get_model_on_server
+    async def mock_get_model_on_server(server_url):
+        models_data = {
+            "http://server1:8000": [{"id": "model123", "created": 1650000000}],
+            "http://server2:8000": [{"id": "model456", "created": 1650001000}],
+            "http://server3:8000": [
+                {"id": "model123", "created": 1650000500},
+                {"id": "model789", "created": 1650002000},
+            ],
+        }
+        return {"data": models_data.get(server_url, [])}
+
+    composer.get_model_on_server = AsyncMock(side_effect=mock_get_model_on_server)
+
+    # Call the handle_models_request method
+    user_group = "group1"
+    response = await composer.handle_models_request(user_group)
+
+    # Decode the JSON response body
+    assert isinstance(response, JSONResponse)
+    response_data = json.loads(response.body.decode("utf-8"))
+
+    # Validate the response structure and data
+    assert response_data["object"] == "list"
+    assert any(model["id"] == "model123" for model in response_data["data"])  # model123 should be included
+    assert not any(model["id"] == "model456" for model in response_data["data"])  # model456 is not in group1
+    assert any(model["id"] == "model789" for model in response_data["data"])  # model789 is compatible
+
+    # Validate that models were fetched only from compatible servers
+    composer.get_model_on_server.assert_any_await("http://server1:8000")
+    composer.get_model_on_server.assert_any_await("http://server3:8000")
+
+    # Ensure http://server2:8000 was not called
+    called_urls = [call.args[0] for call in composer.get_model_on_server.call_args_list]
+    assert "http://server2:8000" not in called_urls

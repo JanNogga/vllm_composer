@@ -182,6 +182,7 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
                         await response.aclose()
                         await client.aclose()
 
+                composer.logger.info(f"Backend response status code: {response.status_code}; Backend response headers: {dict(response.headers)}")
                 return StreamingResponse(
                     response_generator(),
                     status_code=response.status_code,

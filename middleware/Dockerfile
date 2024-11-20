@@ -8,4 +8,4 @@ COPY app.py config.yml secrets.yml util.py ./
 
 EXPOSE 9000
 
-ENTRYPOINT ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "9000"]
+ENTRYPOINT ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9000"]

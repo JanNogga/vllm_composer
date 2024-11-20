@@ -334,8 +334,8 @@ class vllmComposer:
             # Usually this should just access the cache
             server_models = await self.get_model_on_server(server_url)
             if server_models:
-                self.logger.info(f"Found model {server_models} on server {server_url}.")
-                models_data.extend(server_models)
+                self.logger.info(f"Found model {server_models} on server {server_url}. Type of server_models: {type(server_models)}")
+                models_data.append(server_models)
 
         # Deduplicate and format the data as expected by the client
         self.logger.info(f"Proceeding to format {models_data} for response.")

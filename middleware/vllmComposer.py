@@ -154,7 +154,7 @@ class vllmComposer:
         url = f"{server_url}/metrics"
         async with httpx.AsyncClient() as client:
             try:
-                self.logger.info(f"Fetching metrics from {server_url}")
+                self.logger.debug(f"Fetching metrics from {server_url}")
                 response = await asyncio.wait_for(client.get(url), self.request_timeout)
                 response.raise_for_status()
                 metrics_data = response.text
@@ -181,7 +181,7 @@ class vllmComposer:
                 self.metrics_cache[server_url] = total_load
                 # Succesful response, mark server as healthy
                 await self.update_server_health(server_url, is_healthy=True)
-                self.logger.info(f"Metrics fetched for {server_url}: Load = {total_load}")
+                self.logger.debug(f"Metrics fetched for {server_url}: Load = {total_load}")
                 return total_load
             except Exception as exc:
                 # Unsuccessful response deal with server failure
@@ -203,7 +203,7 @@ class vllmComposer:
         headers = {"Authorization": f"Bearer {self.vllm_token}"}
         async with httpx.AsyncClient() as client:
             try:
-                self.logger.info(f"Fetching model from {server_url}")
+                self.logger.debug(f"Fetching model from {server_url}")
                 response = await asyncio.wait_for(client.get(url, headers=headers), self.request_timeout)
                 response.raise_for_status()
                 data = response.json()
@@ -217,7 +217,7 @@ class vllmComposer:
                     self.model_cache[server_url] = model_info
                     # Succesful response, mark server as healthy
                     await self.update_server_health(server_url, is_healthy=True)
-                    self.logger.info(f"Model fetched for {server_url}: Model ID = {model_info}")
+                    self.logger.debug(f"Model fetched for {server_url}: Model ID = {model_info}")
                     return model_info
             except Exception as exc:
                 # Unsuccessful response deal with server failure
@@ -243,7 +243,7 @@ class vllmComposer:
     
     async def refresh_models(self):
         """Periodically refresh model caches."""
-        self.logger.info("Refreshing model caches.")
+        self.logger.debug("Refreshing model caches.")
         tasks = []
         # Fetch model data from each server using get_model_on_server
         for server in self.servers:
@@ -252,7 +252,7 @@ class vllmComposer:
 
     async def refresh_metrics(self):
         """Periodically refresh metrics caches."""
-        self.logger.info("Refreshing metrics caches.")
+        self.logger.debug("Refreshing metrics caches.")
         tasks = []
         # Fetch metrics data from each server using get_server_load
         for server in self.servers:
@@ -320,6 +320,7 @@ class vllmComposer:
 
     async def handle_models_request(self, user_group: str) -> JSONResponse:
         """Handle a request for a list of available models based on the user's permission group."""
+        self.logger.info(f"Received request for models from group '{user_group}'.")
         models_data = []
 
         # Identify servers which are marked as healthy and available for the user's group

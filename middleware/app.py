@@ -138,6 +138,7 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
         # Replace user's token with the internal vllm token and forward the request
         url = f"{least_loaded_server}/v1/{path}"
         headers = {key: value for key, value in request.headers.items() if key.lower() != "authorization"}
+        composer.logger.info(f"Forwarding request to {url} with headers: {headers}")
         headers["Authorization"] = f"Bearer {composer.vllm_token}"
 
         # Register the time of utilization in composer.servers
@@ -146,6 +147,7 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
 
         # Forward the request either in streaming mode or non-streaming mode
         stream_mode = payload.get("stream", False)
+        composer.logger.info(f"Streaming mode: {stream_mode}")
         if stream_mode:
             # Handle streaming response
             client = httpx.AsyncClient()

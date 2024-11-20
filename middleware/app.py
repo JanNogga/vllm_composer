@@ -67,7 +67,7 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
         Fetch metrics from all known servers. Return a dictionary with server URLs as keys and raw metrics texts as values.
         """
         metrics_data = {}
-
+        composer.logger.info("Fetching metrics from all servers...")
         async with httpx.AsyncClient() as client:
             # Create a list of coroutine tasks for fetching metrics from each server
             tasks = []
@@ -103,6 +103,7 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
         user_group = composer.get_group_for_token(user_token)
         if not user_group:
             raise HTTPException(status_code=403, detail="Forbidden: Invalid token or unauthorized group")
+        composer.logger.info(f"User '{user_group}' authenticated.")
         
         # Restrict to specific routes
         if path not in ["chat/completions", "completions", "models", "embeddings"]:
@@ -110,6 +111,7 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
         
         # Handle /v1/models by aggregating models from all servers
         if path == "models":
+            composer.logger.info("Received request for aggregated models from all servers.")
             return await composer.handle_models_request(user_group)
         
         # Extract the target model name from the JSON payload

@@ -1,4 +1,3 @@
-import re
 import httpx
 import asyncio
 from datetime import datetime
@@ -8,7 +7,7 @@ from fastapi.responses import JSONResponse, StreamingResponse, Response
 
 from vllmComposer import vllmComposer
 
-# FastAPI app instantiation
+# app instantiation to provide routes, implementation is mostly in vllmComposer
 def create_app(config_path="config.yml", secrets_path="secrets.yml"):
     app = FastAPI()
     composer = vllmComposer(config_path, secrets_path)
@@ -16,13 +15,13 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # Create tasks for your background functions
+        # task for periodic refresh of models and metrics
         models_task = asyncio.create_task(run_refresh_models())
         metrics_task = asyncio.create_task(run_refresh_metrics())
         try:
             yield
         finally:
-            # Cancel tasks on shutdown
+            # on shutdown
             models_task.cancel()
             metrics_task.cancel()
             await asyncio.gather(models_task, metrics_task, return_exceptions=True)
@@ -30,12 +29,12 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
     async def run_refresh_models():
         while True:
             await composer.refresh_models()
-            await asyncio.sleep(1)  # Adjust the interval as needed
+            await asyncio.sleep(1)
 
     async def run_refresh_metrics():
         while True:
             await composer.refresh_metrics()
-            await asyncio.sleep(0.1)  # Adjust the interval as needed
+            await asyncio.sleep(0.1)
 
     app = FastAPI(lifespan=lifespan)
 
@@ -53,10 +52,19 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
             })
         return JSONResponse(content={"servers": health_data})
     
+    # helper to fetch metrics asynchronously
+    async def fetch_metrics(client, server_url):
+        try:
+            response = await asyncio.wait_for(client.get(server_url), timeout=2)
+            response.raise_for_status()
+            return response.text
+        except httpx.RequestError as exc:
+            return exc
+    
     @app.get("/metrics")
     async def get_aggregated_metrics():
         """
-        Fetch metrics from all known servers and return the raw metrics as a dictionary.
+        Fetch metrics from all known servers. Return a dictionary with server URLs as keys and raw metrics texts as values.
         """
         metrics_data = {}
 
@@ -79,25 +87,19 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
                     metrics_data[server['url']] = result
 
         return JSONResponse(content=metrics_data)
-
-    async def fetch_metrics(client, server_url):
-        try:
-            response = await asyncio.wait_for(client.get(server_url), timeout=2)
-            response.raise_for_status()
-            return response.text
-        except httpx.RequestError as exc:
-            return exc
         
     @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
     async def proxy_request(path: str, request: Request):
-        # Step 1: Extract the user's token from headers
+        """ Middleware to forward requests to the least loaded server. """
+
+        # Extract the user's token from headers
         user_token = request.headers.get("Authorization")
         if not user_token or not user_token.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="Unauthorized: Missing or invalid token")
 
         user_token = user_token[len("Bearer "):]
 
-        # Step 2: Determine the user's group
+        # Determine the user's group based on the token
         user_group = composer.get_group_for_token(user_token)
         if not user_group:
             raise HTTPException(status_code=403, detail="Forbidden: Invalid token or unauthorized group")
@@ -106,11 +108,11 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
         if path not in ["chat/completions", "completions", "models", "embeddings"]:
             raise HTTPException(status_code=404, detail=f"Not Found: The route '{path}' is not supported.")
         
-        # Handle /v1/models differently
+        # Handle /v1/models by aggregating models from all servers
         if path == "models":
             return await composer.handle_models_request(user_group)
         
-        # Step 3: Extract the target model name from the JSON payload
+        # Extract the target model name from the JSON payload
         try:
             payload = await request.json()
             target_model_name = payload.get("model")
@@ -120,27 +122,28 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
             raise HTTPException(status_code=400, detail=f"Bad Request: Invalid JSON payload ({str(exc)})")
         composer.logger.info(f"Received request for model '{target_model_name}' from group '{user_group}'.")
 
-        # Step 4: Find compatible servers
+        # Find compatible servers for the target model and user group
         compatible_servers = await composer.get_compatible_servers(target_model_name, user_group)
         if not compatible_servers:
             raise HTTPException(status_code=503, detail="Service Unavailable: No compatible servers found")
         
-        # Step 5: Find the least utilized server
+        # Identify the least loaded server among the compatible servers based on vllm metrics (tiebreaker: round robin)
         least_loaded_server = await composer.get_least_utilized_server(compatible_servers)
         if not least_loaded_server:
             raise HTTPException(status_code=503, detail="Service Unavailable: No available servers with sufficient capacity")
         composer.logger.info(f"Least loaded server for model '{target_model_name}': {least_loaded_server}. Forwarding request...")
         
-        # Step 6: Replace user's token with self.vllm_token and forward the request
+        # Replace user's token with the internal vllm token and forward the request
         url = f"{least_loaded_server}/v1/{path}"
         headers = {key: value for key, value in request.headers.items() if key.lower() != "authorization"}
         headers["Authorization"] = f"Bearer {composer.vllm_token}"
-        # register the time of utilization in composer.servers
+
+        # Register the time of utilization in composer.servers
         server_idx = [i for i, server in enumerate(composer.servers) if server["url"] == least_loaded_server][0]
         composer.servers[server_idx]["last_utilization"] = datetime.utcnow()
 
+        # Forward the request either in streaming mode or non-streaming mode
         stream_mode = payload.get("stream", False)
-
         if stream_mode:
             # Handle streaming response
             client = httpx.AsyncClient()

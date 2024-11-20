@@ -20,6 +20,7 @@ Functionality for setting up a reverse proxy to compose multiple [vLLM](https://
    ```
 
 4. **Configure the Environment Variables**
+
    Open the `.env` file in a text editor (e.g., `vim .env`) and set the path to the SSL certificate and key.
 
 5. **Navigate to the Middleware Directory**
@@ -33,6 +34,7 @@ Functionality for setting up a reverse proxy to compose multiple [vLLM](https://
    ```
 
 7. **Configure the Middleware Settings**
+
    Open the `config.yml` file in a text editor (e.g., `vim config.yml`) and configure the servers and app settings.
 
 8. **Copy the Secrets Template**
@@ -41,6 +43,7 @@ Functionality for setting up a reverse proxy to compose multiple [vLLM](https://
    ```
 
 9. **Configure the Secrets**
+
    Open the `secrets.yml` file in a text editor (e.g., `vim secrets.yml`) and configure the tokens and user groups.
 
 10. **Navigate to the Caddy Directory**
@@ -54,6 +57,7 @@ Functionality for setting up a reverse proxy to compose multiple [vLLM](https://
     ```
 
 12. **Configure the Caddyfile**
+
     Open the `Caddyfile` in a text editor (e.g., `vim Caddyfile`) and configure the server URL.
 
 13. **Build the Docker Compose Services**

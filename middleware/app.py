@@ -139,9 +139,9 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
         # Replace user's token with the internal vllm token and forward the request
         url = f"{least_loaded_server}/v1/{path}"
         headers = {key: value for key, value in request.headers.items() if key.lower() != "authorization"}
+        headers.pop("content-length", None)
         composer.logger.info(f"Forwarding request to {url} with headers: {headers}")
         headers["Authorization"] = f"Bearer {composer.vllm_token}"
-        headers.pop("Content-Length", None)
 
         # Register the time of utilization in composer.servers
         server_idx = [i for i, server in enumerate(composer.servers) if server["url"] == least_loaded_server][0]

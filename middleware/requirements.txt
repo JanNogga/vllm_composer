@@ -14,3 +14,4 @@ httpx[http2]
 pytest-mock
 respx
 pytest-cov
+asgi-lifespan

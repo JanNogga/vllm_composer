@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock
 from vllmComposer import vllmComposer
 
@@ -54,17 +55,17 @@ async def test_get_least_utilized_server(mock_config_and_secrets):
 
     # Mock compatible servers
     compatible_servers = [
-        "http://server1:8000",
-        "http://server2:8000",
-        "http://server3:8000",
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8002",
+        "http://127.0.0.1:8004",
     ]
 
     # Mock get_server_load to simulate different server loads
     async def mock_get_server_load(server_url):
         server_loads = {
-            "http://server1:8000": 5.0,
-            "http://server2:8000": 2.0,
-            "http://server3:8000": 0.0,  # Least load
+            "http://127.0.0.1:8000": 5.0,
+            "http://127.0.0.1:8002": 0.0,
+            "http://127.0.0.1:8004": 2.0,
         }
         return server_loads.get(server_url, None)
 
@@ -72,7 +73,7 @@ async def test_get_least_utilized_server(mock_config_and_secrets):
 
     # Test least utilized server
     least_loaded_server = await composer.get_least_utilized_server(compatible_servers)
-    assert least_loaded_server == "http://server3:8000"  # Server with the least load
+    assert least_loaded_server == "http://127.0.0.1:8002"  # Server with the least load
 
     # Test when all servers have equal load
     async def mock_equal_load(server_url):
@@ -80,7 +81,33 @@ async def test_get_least_utilized_server(mock_config_and_secrets):
 
     composer.get_server_load = AsyncMock(side_effect=mock_equal_load)
     least_loaded_server = await composer.get_least_utilized_server(compatible_servers)
-    assert least_loaded_server == compatible_servers[0]  # Defaults to the first in case of a tie
+    assert least_loaded_server == compatible_servers[0] # First one since none has been selected yet
+
+    # Add a test for servers with equal load but different last utilization
+    now = datetime.utcnow()
+    composer.servers = [
+        {
+            "url": "http://127.0.0.1:8000",
+            "allowed_groups": ["group1"],
+            "last_utilization": now - timedelta(minutes=5),
+        },
+        {
+            "url": "http://127.0.0.1:8002",
+            "allowed_groups": ["group2"],
+            "last_utilization": now - timedelta(minutes=10),
+        },
+        {
+            "url": "http://127.0.0.1:8004",
+            "allowed_groups": ["group3"],
+            "last_utilization": now - timedelta(minutes=30),
+        },
+    ]
+
+    # Debugging logs (can be removed later)
+    print(f"Compatible servers: {compatible_servers}")
+    print(f"Composer servers: {composer.servers}")
+    least_loaded_server = await composer.get_least_utilized_server(compatible_servers)
+    assert least_loaded_server == "http://127.0.0.1:8004"  # Longest unused
 
     # Test with no servers
     least_loaded_server = await composer.get_least_utilized_server([])

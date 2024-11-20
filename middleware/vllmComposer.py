@@ -71,7 +71,7 @@ class vllmComposer:
             ports = range(host["ports"]["start"], host["ports"]["end"] + 1)
             allowed_groups = host["allowed_groups"]
             self.servers.extend([
-                {"url": f"{hostname if hostname.startswith(('http://', 'https://')) else f'http://{hostname}'}:{port}", "allowed_groups": allowed_groups}
+                {"url": f"{hostname if hostname.startswith(('http://', 'https://')) else f'http://{hostname}'}:{port}", "allowed_groups": allowed_groups, "last_utilization": None}
                 for port in ports
             ])
         app_settings = config.get("app_settings", {})
@@ -259,17 +259,41 @@ class vllmComposer:
 
     async def get_least_utilized_server(self, compatible_servers: list[str]) -> str | None:
         min_load = float('inf')
-        least_loaded_server = None
+        least_loaded_servers = []  # To track servers with the minimum load
+        now = datetime.utcnow()
 
+        # First pass: Find the minimum load and corresponding servers
         for server_url in compatible_servers:
             server_load = await self.get_server_load(server_url)
-            if server_load == 0:
-                return server_url
-            if server_load is not None and server_load < min_load:
-                min_load = server_load
-                least_loaded_server = server_url
+            if server_load is not None:
+                if server_load < min_load:
+                    min_load = server_load
+                    least_loaded_servers = [server_url]
+                elif server_load == min_load:
+                    least_loaded_servers.append(server_url)
 
-        return least_loaded_server
+        if not least_loaded_servers:
+            return None
+
+        # Second pass: Among least loaded servers, pick the one least recently utilized or never utilized
+        least_recent_utilization = -1
+        selected_server = None
+
+        for server_url in least_loaded_servers:
+            server_entry = next((s for s in self.servers if s["url"] == server_url), None)
+            if not server_entry:
+                continue
+
+            last_utilization = server_entry["last_utilization"]
+            if last_utilization is None:  # Never utilized, highest priority
+                return server_url
+            else:
+                time_since_utilization = (now - last_utilization).total_seconds()
+                if time_since_utilization > least_recent_utilization:
+                    least_recent_utilization = time_since_utilization
+                    selected_server = server_url
+
+        return selected_server
 
     async def handle_models_request(self, user_group: str) -> JSONResponse:
         models_data = []

@@ -10,7 +10,7 @@ def test_load_config(mock_config_and_secrets):
 
     # Validate servers list
     expected_servers = [
-        {"url": f"http://{host['hostname']}:{port}", "allowed_groups": host["allowed_groups"]}
+        {"url": f"http://{host['hostname']}:{port}", "allowed_groups": host["allowed_groups"], 'last_utilization': None}
         for host in config_dict["vllm_hosts"]
         for port in range(host["ports"]["start"], host["ports"]["end"] + 1)
     ]

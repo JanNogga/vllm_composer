@@ -1,11 +1,11 @@
 import re
 import httpx
 import asyncio
+from datetime import datetime
 from contextlib import asynccontextmanager
-from collections import defaultdict
 from fastapi import FastAPI, Request, HTTPException
-from fastapi_utils.tasks import repeat_every
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, Response
+
 from vllmComposer import vllmComposer
 
 # FastAPI app instantiation
@@ -52,8 +52,42 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
                 "model_cached": composer.model_cache.get(server_url)
             })
         return JSONResponse(content={"servers": health_data})
+    
+    @app.get("/metrics")
+    async def get_aggregated_metrics():
+        """
+        Fetch metrics from all known servers and return the raw metrics as a dictionary.
+        """
+        metrics_data = {}
 
+        async with httpx.AsyncClient() as client:
+            # Create a list of coroutine tasks for fetching metrics from each server
+            tasks = []
+            for server in composer.servers:
+                server_url = f"{server['url']}/metrics"
+                tasks.append(fetch_metrics(client, server_url))
 
+            # Run all the tasks concurrently
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Collect results into metrics_data dictionary
+            for server, result in zip(composer.servers, results):
+                if isinstance(result, Exception):
+                    composer.logger.error(f"Error fetching metrics from {server['url']}: {result}")
+                    metrics_data[server['url']] = f"Error: {result}"
+                else:
+                    metrics_data[server['url']] = result
+
+        return JSONResponse(content=metrics_data)
+
+    async def fetch_metrics(client, server_url):
+        try:
+            response = await asyncio.wait_for(client.get(server_url), timeout=2)
+            response.raise_for_status()
+            return response.text
+        except httpx.RequestError as exc:
+            return exc
+        
     @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
     async def proxy_request(path: str, request: Request):
         # Step 1: Extract the user's token from headers
@@ -101,32 +135,56 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
         url = f"{least_loaded_server}/v1/{path}"
         headers = {key: value for key, value in request.headers.items() if key.lower() != "authorization"}
         headers["Authorization"] = f"Bearer {composer.vllm_token}"
+        # register the time of utilization in composer.servers
+        server_idx = [i for i, server in enumerate(composer.servers) if server["url"] == least_loaded_server][0]
+        composer.servers[server_idx]["last_utilization"] = datetime.utcnow()
 
         stream_mode = payload.get("stream", False)
 
-        async with httpx.AsyncClient() as client:
+        if stream_mode:
+            # Handle streaming response
+            client = httpx.AsyncClient()
             try:
-                if stream_mode:
-                    # Handle streaming response
-                    response = await client.stream(
-                        method=request.method,
-                        url=url,
-                        headers=headers,
-                        json=payload if request.method in ["POST", "PUT"] else None,
-                        params=request.query_params
-                    )
+                response = await client.request(
+                    method=request.method,
+                    url=url,
+                    headers=headers,
+                    json=payload if request.method in ["POST", "PUT"] else None,
+                    params=request.query_params
+                )
 
-                    async def stream_response():
-                        async for chunk in response.aiter_bytes():
-                            yield chunk
-
-                    return StreamingResponse(
-                        stream_response(),
+                # Check for non-success status codes before streaming
+                if response.status_code >= 400:
+                    content = await response.aread()
+                    await response.aclose()
+                    await client.aclose()
+                    return Response(
+                        content=content,
                         status_code=response.status_code,
                         headers=dict(response.headers)
                     )
-                else:
-                    # Handle non-streaming response
+
+                # Stream the response to the client
+                async def response_generator():
+                    try:
+                        async for chunk in response.aiter_bytes():
+                            yield chunk
+                    finally:
+                        await response.aclose()
+                        await client.aclose()
+
+                return StreamingResponse(
+                    response_generator(),
+                    status_code=response.status_code,
+                    headers=dict(response.headers)
+                )
+            except Exception as exc:
+                await client.aclose()
+                raise HTTPException(status_code=502, detail=f"Error during streaming: {exc}")
+        else:
+            # Handle non-streaming response
+            async with httpx.AsyncClient() as client:
+                try:
                     response = await client.request(
                         method=request.method,
                         url=url,
@@ -134,78 +192,12 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
                         json=payload if request.method in ["POST", "PUT"] else None,
                         params=request.query_params
                     )
-                    return JSONResponse(
-                        content=response.json(),
+                    return Response(
+                        content=response.content,
                         status_code=response.status_code,
                         headers=dict(response.headers)
                     )
-            except httpx.RequestError as exc:
-                raise HTTPException(status_code=502, detail=f"Error communicating with backend server: {exc}")
-
-
-    def parse_metrics(raw_metrics: str, aggregated_metrics: dict):
-        """
-        Parse raw Prometheus-style metrics and aggregate them.
-
-        Args:
-            raw_metrics (str): Raw metrics data from a server.
-            aggregated_metrics (dict): Dictionary to store aggregated metrics.
-        """
-        metrics_pattern = re.compile(r'(\w+:\w+)\{(.*?)\}\s+([\d\.\-eE]+)')
-        label_pattern = re.compile(r'(\w+)="(.*?)"')
-        metrics = defaultdict(list)
-
-        # Match Prometheus-style metrics with labels
-        for match in metrics_pattern.finditer(raw_metrics):
-            metric_name = match.group(1)  # Metric name (e.g., "vllm:lora_requests_info")
-            labels_raw = match.group(2)  # Raw labels string (e.g., 'max_lora="0",running_lora_adapters=""')
-            metric_value = float(match.group(3))  # Metric value
-
-            # Parse the labels into a dictionary
-            labels = {m.group(1): m.group(2) for m in label_pattern.finditer(labels_raw)}
-
-            # Use a tuple of the metric name and sorted labels as the aggregation key
-            aggregation_key = (metric_name, tuple(sorted(labels.items())))
-
-            metrics[aggregation_key].append(metric_value)
-
-        # Aggregate metrics (e.g., sum for counters, average for gauges)
-        for (metric_name, labels), values in metrics.items():
-            if "counter" in metric_name:  # For counters, take the sum
-                aggregated_value = sum(values)
-            else:  # For gauges, take the average
-                aggregated_value = sum(values) / len(values) if values else 0
-
-            # Store the aggregated metric in the result, including its labels
-            if metric_name not in aggregated_metrics:
-                aggregated_metrics[metric_name] = []
-            
-            aggregated_metrics[metric_name].append({
-                "labels": dict(labels),
-                "value": aggregated_value
-            })
-
-    @app.get("/metrics")
-    async def get_aggregated_metrics():
-        """
-        Aggregate metrics from all known servers and return the results.
-        """
-
-        metrics_data = {}
-
-        async with httpx.AsyncClient() as client:
-            for server in composer.servers:
-                server_url = f"{server['url']}/metrics"
-                try:
-                    response = await client.get(server_url)
-                    response.raise_for_status()
-                    # Parse the metrics data
-                    raw_metrics = response.text
-                    parse_metrics(raw_metrics, metrics_data)
                 except httpx.RequestError as exc:
-                    composer.logger.error(f"Error fetching metrics from {server_url}: {exc}")
-                    continue
-
-        return JSONResponse(content=metrics_data)
+                    raise HTTPException(status_code=502, detail=f"Error communicating with backend server: {exc}")
 
     return app

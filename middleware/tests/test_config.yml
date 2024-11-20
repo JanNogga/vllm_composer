@@ -1,5 +1,5 @@
 vllm_hosts:
-  - hostname: "http://myfirstvllmserver"
+  - hostname: "127.0.0.1"
     ports:
       start: 8000
       end: 8002
@@ -7,10 +7,7 @@ vllm_hosts:
       - "admin"
       - "staff"
       - "student"
-      - "teaching"
-      - "guest"
-      - "legacy"
-  - hostname: "http://myothervllmserver"
+  - hostname: "127.0.0.1"
     ports:
       start: 8004
       end: 8004
@@ -21,10 +18,21 @@ vllm_hosts:
       - "teaching"
       - "guest"
       - "legacy"
-  - hostname: "http://mythirdvllmserver"
+  - hostname: "127.0.0.1"
+    ports:
+      start: 8006
+      end: 8006
+    allowed_groups:
+      - "admin"
+      - "staff"
+      - "student"
+      - "teaching"
+      - "guest"
+      - "legacy"
+  - hostname: "127.0.0.1"
     ports:
       start: 9962
-      end: 9970
+      end: 9967
     allowed_groups:
       - "admin"
       - "staff"

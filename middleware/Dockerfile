@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py config.yml secrets.yml util.py ./
+COPY app.py config.yml secrets.yml vllmComposer.py main.py ./
 
 EXPOSE 9000
 

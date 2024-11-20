@@ -134,7 +134,7 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
         if not least_loaded_server:
             raise HTTPException(status_code=503, detail="Service Unavailable: No available servers with sufficient capacity")
         composer.logger.info(f"Least loaded server for model '{target_model_name}': {least_loaded_server}.")
-        composer.logger.info(f" Forwarding request with payload: {payload}")
+        composer.logger.debug(f" Forwarding request with payload: {payload}")
         
         # Replace user's token with the internal vllm token and forward the request
         url = f"{least_loaded_server}/v1/{path}"

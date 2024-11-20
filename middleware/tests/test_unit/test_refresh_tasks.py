@@ -26,7 +26,7 @@ async def test_refresh_models(mock_config_and_secrets):
     composer.get_model_on_server = AsyncMock(side_effect=mock_get_model_on_server)
 
     # Call the original method directly (bypassing the decorator)
-    await composer.refresh_models.__wrapped__(composer)
+    await composer.refresh_models()
 
     # Validate that get_model_on_server was called for each server
     composer.get_model_on_server.assert_any_await("http://server1:8000")
@@ -58,7 +58,7 @@ async def test_refresh_metrics(mock_config_and_secrets):
     )
 
     # Call the original method directly (bypassing the decorator)
-    await composer.refresh_metrics.__wrapped__(composer)
+    await composer.refresh_metrics()
 
     # Validate that metrics were fetched for each server
     assert server1_route.called

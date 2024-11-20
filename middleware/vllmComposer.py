@@ -1,4 +1,5 @@
 import re
+import time
 import yaml
 import httpx
 import asyncio
@@ -7,9 +8,24 @@ from typing import Optional
 from cachetools import TTLCache
 from collections import defaultdict
 from datetime import datetime, timedelta
-from fastapi_utils.tasks import repeat_every
 from fastapi.responses import JSONResponse
 
+class RateLimitFilter(logging.Filter):
+    def __init__(self, min_interval):
+        super().__init__()
+        self.min_interval = min_interval  # Minimum interval between logs (in seconds)
+        self.last_log_time = {}
+
+    def filter(self, record):
+        current_time = time.time()
+        # Create a unique key for each log message based on name, level, and message
+        record_key = (record.name, record.levelno, record.getMessage())
+        last_time = self.last_log_time.get(record_key, 0)
+        if current_time - last_time >= self.min_interval:
+            self.last_log_time[record_key] = current_time
+            return True  # Log the message
+        else:
+            return False  # Skip the message
 
 class vllmComposer:
     def __init__(self, config_path: str, secrets_path: str):
@@ -19,8 +35,8 @@ class vllmComposer:
         self.vllm_token = None
 
         # Caches
-        self.metrics_cache = TTLCache(maxsize=100, ttl=10)
-        self.model_cache = TTLCache(maxsize=100, ttl=20)
+        self.metrics_cache = TTLCache(maxsize=100, ttl=0.5)
+        self.model_cache = TTLCache(maxsize=100, ttl=5)
 
         # Server health tracking
         self.server_health = {}
@@ -39,6 +55,8 @@ class vllmComposer:
         file_handler.setFormatter(formatter)
         self.logger.addHandler(console_handler)
         self.logger.addHandler(file_handler)
+        rate_limit_filter = RateLimitFilter(min_interval=1)
+        self.logger.addFilter(rate_limit_filter)
 
         self.load_config(config_path)
         self.load_secrets(secrets_path)
@@ -53,7 +71,7 @@ class vllmComposer:
             ports = range(host["ports"]["start"], host["ports"]["end"] + 1)
             allowed_groups = host["allowed_groups"]
             self.servers.extend([
-                {"url": f"{hostname if (hostname.startswith(('http://', 'https://')) or hostname in ['localhost', '127.0.0.1']) else f'http://{hostname}'}:{port}", "allowed_groups": allowed_groups}
+                {"url": f"{hostname if hostname.startswith(('http://', 'https://')) else f'http://{hostname}'}:{port}", "allowed_groups": allowed_groups}
                 for port in ports
             ])
         app_settings = config.get("app_settings", {})
@@ -62,6 +80,8 @@ class vllmComposer:
         self.max_failures = app_settings.get("max_failures", 3)
         cooldown_minutes = app_settings.get("cooldown_period_minutes", 5)
         self.cooldown_period = timedelta(minutes=cooldown_minutes)
+        request_timeout = app_settings.get("request_timeout", 2.0)
+        self.request_timeout = request_timeout
 
         # Configure logger
         log_level = app_settings.get("log_level", "INFO").upper()
@@ -116,6 +136,7 @@ class vllmComposer:
 
     async def get_server_load(self, server_url: str) -> float | None:
         if not await self.is_server_healthy(server_url):
+            self.logger.warning(f"Server {server_url} is not healthy. Not fetching metrics.")
             return None
         # Check cache first
         if server_url in self.metrics_cache:
@@ -124,7 +145,8 @@ class vllmComposer:
         url = f"{server_url}/metrics"
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.get(url)
+                self.logger.info(f"Fetching metrics from {server_url}")
+                response = await asyncio.wait_for(client.get(url), self.request_timeout)
                 response.raise_for_status()
                 metrics_data = response.text
 
@@ -157,6 +179,7 @@ class vllmComposer:
 
     async def get_model_on_server(self, server_url: str) -> str | None:
         if not await self.is_server_healthy(server_url):
+            self.logger.warning(f"Server {server_url} is not healthy. Not fetching model.")
             return None
         # Check cache first
         if server_url in self.model_cache:
@@ -167,7 +190,8 @@ class vllmComposer:
 
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.get(url, headers=headers)
+                self.logger.info(f"Fetching model from {server_url}")
+                response = await asyncio.wait_for(client.get(url, headers=headers), self.request_timeout)
                 response.raise_for_status()
                 data = response.json()
 
@@ -199,18 +223,18 @@ class vllmComposer:
             return False
         health_info = self.server_health.get(server_url, {"healthy": True})
         return health_info["healthy"]
-
-    @repeat_every(seconds=20)
+    
     async def refresh_models(self):
         """Periodically refresh model caches."""
+        self.logger.info("Refreshing model caches.")
         tasks = []
         for server in self.servers:
             tasks.append(self.get_model_on_server(server["url"]))
         await asyncio.gather(*tasks)
 
-    @repeat_every(seconds=10)
     async def refresh_metrics(self):
         """Periodically refresh metrics and model caches."""
+        self.logger.info("Refreshing metrics caches.")
         tasks = []
         for server in self.servers:
             tasks.append(self.get_server_load(server["url"]))

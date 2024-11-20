@@ -2,15 +2,15 @@ https://api.somewhere.com {
     tls /etc/ssl/cert.pem /etc/ssl/server.key
 
     handle /v1/* {
-        reverse_proxy localhost:9000
+        reverse_proxy middleware:9000
     }
 
     handle /metrics {
-        reverse_proxy localhost:9000
+        reverse_proxy middleware:9000
     }
 
     handle /health {
-        reverse_proxy localhost:9000
+        reverse_proxy middleware:9000
     }
 
     handle {

@@ -141,6 +141,7 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
         headers = {key: value for key, value in request.headers.items() if key.lower() != "authorization"}
         composer.logger.info(f"Forwarding request to {url} with headers: {headers}")
         headers["Authorization"] = f"Bearer {composer.vllm_token}"
+        headers.pop("Content-Length", None)
 
         # Register the time of utilization in composer.servers
         server_idx = [i for i, server in enumerate(composer.servers) if server["url"] == least_loaded_server][0]

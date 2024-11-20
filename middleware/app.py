@@ -133,7 +133,8 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
         least_loaded_server = await composer.get_least_utilized_server(compatible_servers)
         if not least_loaded_server:
             raise HTTPException(status_code=503, detail="Service Unavailable: No available servers with sufficient capacity")
-        composer.logger.info(f"Least loaded server for model '{target_model_name}': {least_loaded_server}. Forwarding request...")
+        composer.logger.info(f"Least loaded server for model '{target_model_name}': {least_loaded_server}.")
+        composer.logger.info(f" Forwarding request with payload: {payload}")
         
         # Replace user's token with the internal vllm token and forward the request
         url = f"{least_loaded_server}/v1/{path}"
@@ -199,6 +200,8 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
                         json=payload if request.method in ["POST", "PUT"] else None,
                         params=request.query_params
                     )
+                    composer.logger.info(f"Backend response headers: {dict(response.headers)}")
+                    composer.logger.info(f"Backend response content: {response.content}")
                     return Response(
                         content=response.content,
                         status_code=response.status_code,

@@ -62,9 +62,10 @@ Functionality for setting up a reverse proxy to compose multiple [vLLM](https://
 
 13. **Build the Docker Compose Services**
     ```bash
-    docker compose build
+    cd .. && docker compose build
     ```
 
 14. **Start the Docker Compose Services**
     ```bash
     docker compose up -d
+    ```

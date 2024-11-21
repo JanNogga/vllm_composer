@@ -13,6 +13,10 @@ https://api.somewhere.com {
         reverse_proxy middleware:9000
     }
 
+    handle /reload {
+        reverse_proxy middleware:9000
+    }
+
     handle {
         respond "404 Not Found" 404
     }

@@ -38,3 +38,5 @@ app_settings:
   cooldown_period_minutes: 5
   log_level: "INFO"
   request_timeout: 2
+  admin_groups:
+    - "admin"

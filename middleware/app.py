@@ -87,7 +87,39 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
                     metrics_data[server['url']] = result
 
         return JSONResponse(content=metrics_data)
+    
+    @app.api_route("/reload", methods=["POST"])
+    async def reload_configuration(request: Request):
+        """ Reload configuration and secrets. """
+
+        # Extract the user's token from headers
+        user_token = request.headers.get("Authorization")
+        if not user_token or not user_token.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Unauthorized: Missing or invalid token")
+
+        user_token = user_token[len("Bearer "):]
+
+        # Determine the user's group based on the token
+        user_group = composer.get_group_for_token(user_token)
+        if not user_group:
+            raise HTTPException(status_code=403, detail="Forbidden: Invalid token or unauthorized group")
         
+        # Check if the user group has admin privileges
+        if user_group not in composer.admin_groups:
+            raise HTTPException(status_code=403, detail="Forbidden: Insufficient permissions")
+        
+        composer.logger.info(f"User '{user_group}' authorized to reload configuration.")
+
+        # Reload configuration and secrets
+        try:
+            composer.load_config()
+            composer.load_secrets()
+            composer.logger.info("Configuration and secrets reloaded successfully.")
+            return JSONResponse(content={"message": "Configuration and secrets reloaded successfully."})
+        except Exception as exc:
+            composer.logger.error(f"Error reloading configuration or secrets: {exc}")
+            raise HTTPException(status_code=500, detail=f"Internal Server Error: {exc}")
+
     @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
     async def proxy_request(path: str, request: Request):
         """ Middleware to forward requests to the least loaded server. """

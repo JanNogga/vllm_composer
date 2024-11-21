@@ -32,6 +32,10 @@ class RateLimitFilter(logging.Filter):
 class vllmComposer:
     """Class to manage VLLM servers and models."""
     def __init__(self, config_path: str, secrets_path: str):
+        # Paths to configuration and secrets files
+        self.config_path = config_path
+        self.secrets_path = secrets_path
+
         # Configuration which is loaded from files
         self.servers = []
         self.model_owner = 'unknown'
@@ -63,11 +67,11 @@ class vllmComposer:
         self.logger.addFilter(rate_limit_filter)
 
         # Load settings from files
-        self.load_config(config_path)
-        self.load_secrets(secrets_path)
+        self.load_config()
+        self.load_secrets()
 
-    def load_config(self, config_path: str):
-        with open(config_path, "r") as file:
+    def load_config(self):
+        with open(self.config_path, "r") as file:
             config = yaml.safe_load(file)
         
         # Parse server settings
@@ -87,6 +91,7 @@ class vllmComposer:
         cooldown_minutes = app_settings.get("cooldown_period_minutes", 5)
         self.cooldown_period = timedelta(minutes=cooldown_minutes)
         self.request_timeout = app_settings.get("request_timeout", 2.0)
+        self.admin_groups = app_settings.get("admin_groups", ['admin'])
 
         # Configure logger
         log_level = app_settings.get("log_level", "INFO").upper()
@@ -94,10 +99,12 @@ class vllmComposer:
 
         # Initialize health for each server
         self.server_health = {server["url"]: {"healthy": True, "last_checked": None} for server in self.servers}
+        self.failure_counts = defaultdict(int)
+        self.circuit_breaker_timeout = {}
         self.logger.info("Configuration loaded successfully.")
 
-    def load_secrets(self, secrets_path: str):
-        with open(secrets_path, "r") as file:
+    def load_secrets(self):
+        with open(self.secrets_path, "r") as file:
             secrets = yaml.safe_load(file)
         
         # Parse group tokens
@@ -208,7 +215,7 @@ class vllmComposer:
                 response.raise_for_status()
                 data = response.json()
 
-                # Extract the model ID
+                # Extract the model info
                 models = data.get("data", [])
                 if models:
                     # Each vllm serving instance only has one model
@@ -217,7 +224,7 @@ class vllmComposer:
                     self.model_cache[server_url] = model_info
                     # Succesful response, mark server as healthy
                     await self.update_server_health(server_url, is_healthy=True)
-                    self.logger.debug(f"Model fetched for {server_url}: Model ID = {model_info}")
+                    self.logger.debug(f"Model fetched for {server_url}: Model info = {model_info}")
                     return model_info
             except Exception as exc:
                 # Unsuccessful response deal with server failure

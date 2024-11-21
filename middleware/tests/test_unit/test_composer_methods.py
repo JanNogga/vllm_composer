@@ -21,6 +21,7 @@ def test_load_config(mock_config_and_secrets):
     assert composer.model_owner == app_settings["model_owner"]
     assert composer.max_failures == app_settings["max_failures"]
     assert composer.cooldown_period == timedelta(minutes=app_settings["cooldown_period_minutes"])
+    assert composer.admin_groups == app_settings["admin_groups"]
 
     # Validate server health initialization
     expected_health = {server["url"]: {"healthy": True, "last_checked": None} for server in expected_servers}

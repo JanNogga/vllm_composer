@@ -312,14 +312,11 @@ async def test_handle_models_request(mock_config_and_secrets):
     # Mock get_model_on_server
     async def mock_get_model_on_server(server_url):
         models_data = {
-            "http://server1:8000": [{"id": "model123", "created": 1650000000}],
-            "http://server2:8000": [{"id": "model456", "created": 1650001000}],
-            "http://server3:8000": [
-                {"id": "model123", "created": 1650000500},
-                {"id": "model789", "created": 1650002000},
-            ],
+            "http://server1:8000": {"id": "model123", "created": 1650000000},
+            "http://server2:8000": {"id": "model456", "created": 1650001000},
+            "http://server3:8000": {"id": "model123", "created": 1650000500},
         }
-        return {"data": models_data.get(server_url, [])}
+        return models_data.get(server_url, None)
 
     composer.get_model_on_server = AsyncMock(side_effect=mock_get_model_on_server)
 
@@ -330,12 +327,13 @@ async def test_handle_models_request(mock_config_and_secrets):
     # Decode the JSON response body
     assert isinstance(response, JSONResponse)
     response_data = json.loads(response.body.decode("utf-8"))
+    print(response_data)
+
 
     # Validate the response structure and data
     assert response_data["object"] == "list"
     assert any(model["id"] == "model123" for model in response_data["data"])  # model123 should be included
     assert not any(model["id"] == "model456" for model in response_data["data"])  # model456 is not in group1
-    assert any(model["id"] == "model789" for model in response_data["data"])  # model789 is compatible
 
     # Validate that models were fetched only from compatible servers
     composer.get_model_on_server.assert_any_await("http://server1:8000")

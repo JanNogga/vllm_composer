@@ -195,8 +195,17 @@ async def test_v1_routes(client, app):
             )
 
             response = await client.post(f"/v1/{path}", headers=headers, json=payload)
-            assert response.status_code == 502, "Expected 502 Bad Gateway from proxy endpoint (streaming with error)"
-            assert "Error during streaming" in response.json()["detail"], "Error detail mismatch"
+            assert response.status_code == 200, "Expected 200 OK from proxy endpoint (streaming with error). Error should be in final chunk."
+
+            content = b""
+            async for chunk in response.aiter_bytes():
+                content += chunk
+
+            # Check that the initial content is correct and the error is included in the final chunk
+            expected_content_start = b'data: {"choices": [{"delta": {"content": "Hello"}}]}\n\n'
+            expected_error_chunk = b'event: error\ndata: {"error": "Streaming interrupted"}\n\n'
+            assert expected_content_start in content, "Initial streaming content mismatch"
+            assert expected_error_chunk in content, "Error chunk mismatch in streaming response"
 
             # Ensure the backend server was called
             assert mock_route.called, "Backend server was not called for streaming response"

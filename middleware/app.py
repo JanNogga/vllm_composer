@@ -3,7 +3,8 @@ import asyncio
 from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+from starlette.background import BackgroundTask
 
 from vllmComposer import vllmComposer
 
@@ -186,42 +187,44 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
             # Handle streaming response
             client = httpx.AsyncClient()
             try:
-                response = await client.request(
-                    method=request.method,
-                    url=url,
-                    headers=headers,
-                    json=payload if request.method in ["POST", "PUT"] else None,
-                    params=request.query_params
-                )
+                req = client.build_request(
+                            method=request.method,
+                            url=url,
+                            headers=headers,
+                            json=payload if request.method in ["POST", "PUT"] else None,
+                            params=request.query_params
+                        )
+                response = await client.send(req, stream=True)
 
                 # Check for non-success status codes before streaming
                 if response.status_code >= 400:
                     content = await response.aread()
                     await response.aclose()
-                    await client.aclose()
                     return Response(
                         content=content,
                         status_code=response.status_code,
                         headers=dict(response.headers)
                     )
 
-                # Stream the response to the client
-                async def response_generator():
+                # Augment aiter_bytes to handle exceptions
+                async def safe_stream_generator():
                     try:
                         async for chunk in response.aiter_bytes():
                             yield chunk
+                    except Exception as exc:
+                        composer.logger.error(f"Error during streaming: {exc}")
+                        yield b'event: error\ndata: {"error": "Streaming interrupted"}\n\n'
                     finally:
                         await response.aclose()
-                        await client.aclose()
 
-                composer.logger.info(f"Backend response status code: {response.status_code}; Backend response headers: {dict(response.headers)}")
+                # Stream the response to the client
                 return StreamingResponse(
-                    response_generator(),
+                    safe_stream_generator(),
                     status_code=response.status_code,
-                    headers=dict(response.headers)
+                    headers={key: value for key, value in dict(response.headers).items() if key.lower() != "content-length"},
+                    background=BackgroundTask(response.aclose)
                 )
             except Exception as exc:
-                await client.aclose()
                 raise HTTPException(status_code=502, detail=f"Error during streaming: {exc}")
         else:
             # Handle non-streaming response

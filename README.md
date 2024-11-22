@@ -60,12 +60,14 @@ Functionality for setting up a reverse proxy to compose multiple [vLLM](https://
 
     Open the `Caddyfile` in a text editor (e.g., `vim Caddyfile`) and configure the server URL.
 
-13. **Build the Docker Compose Services**
+13. **Build the middleware Docker image**
+
     ```bash
     cd .. && docker compose build
     ```
 
-14. **Start the Docker Compose Services**
+14. **Start caddy and middleware**
+
     ```bash
     docker compose up -d
     ```

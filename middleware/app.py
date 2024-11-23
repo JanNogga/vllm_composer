@@ -228,23 +228,26 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
                 raise HTTPException(status_code=502, detail=f"Error during streaming: {exc}")
         else:
             # Handle non-streaming response
-            async with httpx.AsyncClient() as client:
-                try:
-                    response = await client.request(
-                        method=request.method,
-                        url=url,
-                        headers=headers,
-                        json=payload if request.method in ["POST", "PUT"] else None,
-                        params=request.query_params
-                    )
-                    composer.logger.info(f"Backend response headers: {dict(response.headers)}")
-                    composer.logger.info(f"Backend response content: {response.content}")
-                    return Response(
-                        content=response.content,
-                        status_code=response.status_code,
-                        headers=dict(response.headers)
-                    )
-                except httpx.RequestError as exc:
-                    raise HTTPException(status_code=502, detail=f"Error communicating with backend server: {exc}")
+            try:
+                client = httpx.AsyncClient()
+                req = client.build_request(
+                    method=request.method,
+                    url=url,
+                    headers=headers,
+                    json=payload if request.method in ["POST", "PUT"] else None,
+                    params=request.query_params
+                )
+                response = await client.send(req)
+                composer.logger.info(f"Backend response headers: {dict(response.headers)}")
+                composer.logger.info(f"Backend response content: {response.content}")
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers)
+                )
+            except Exception as exc:
+                raise HTTPException(status_code=502, detail=f"Error communicating with backend server: {exc}")
+            finally:
+                await client.aclose()
 
     return app

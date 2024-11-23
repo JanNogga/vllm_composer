@@ -229,7 +229,13 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
         else:
             # Handle non-streaming response
             try:
-                client = httpx.AsyncClient()
+                timeout = httpx.Timeout(
+                    connect=5.0,
+                    read=60.0,
+                    write=5.0,
+                    pool=5.0
+                )
+                client = httpx.AsyncClient(timeout=timeout)
                 req = client.build_request(
                     method=request.method,
                     url=url,

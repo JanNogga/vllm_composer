@@ -171,11 +171,12 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
         composer.logger.info(f"Least loaded server for model '{target_model_name}': {least_loaded_server}.")
         composer.logger.debug(f" Forwarding request with payload: {payload}")
         
-        # Replace user's token with the internal vllm token and forward the request
+        # Replace user's token with the internal vllm token and sanitize headers
         url = f"{least_loaded_server}/v1/{path}"
-        headers = {key: value for key, value in request.headers.items() if key.lower() not in ["content-length", "authorization", "api-key"]}
+        headers = {key: value for key, value in request.headers.items() if key.lower() not in ["content-length", "authorization", "api-key", "accept-encoding"]}
         composer.logger.info(f"Forwarding request to {url} with headers: {headers}")
         headers["Authorization"] = f"Bearer {composer.vllm_token}"
+        headers["accept-encoding"] = "gzip"
 
         # Register the time of utilization in composer.servers
         server_idx = [i for i, server in enumerate(composer.servers) if server["url"] == least_loaded_server][0]

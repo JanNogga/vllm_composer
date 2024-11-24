@@ -37,7 +37,7 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
             await composer.refresh_metrics()
             await asyncio.sleep(0.1)
 
-    app = FastAPI(lifespan=lifespan)
+    app.router.lifespan_context = lifespan
 
     @app.get("/health")
     async def health_check():

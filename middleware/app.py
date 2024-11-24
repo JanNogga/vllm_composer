@@ -173,8 +173,7 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
         
         # Replace user's token with the internal vllm token and forward the request
         url = f"{least_loaded_server}/v1/{path}"
-        headers = {key: value for key, value in request.headers.items() if key.lower() != "authorization"}
-        headers.pop("content-length", None)
+        headers = {key: value for key, value in request.headers.items() if key.lower() not in ["content-length", "authorization", "api-key"]}
         composer.logger.info(f"Forwarding request to {url} with headers: {headers}")
         headers["Authorization"] = f"Bearer {composer.vllm_token}"
 

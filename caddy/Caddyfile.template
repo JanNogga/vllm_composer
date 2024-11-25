@@ -22,7 +22,7 @@ https://api.somewhere.com {
     }
 
     handle /myopenwebuihandle {
-        reverse_proxy openwebui:9000
+        reverse_proxy openwebui:3000
     }
 
     handle {

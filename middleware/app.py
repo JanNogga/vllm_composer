@@ -195,7 +195,13 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
         composer.logger.info(f"Streaming mode: {stream_mode}")
         if stream_mode:
             # Handle streaming response - see 'manual streaming mode' in https://www.python-httpx.org/async/
-            client = httpx.AsyncClient()
+            timeout = httpx.Timeout(
+                connect=10.0,
+                read=10.0,
+                write=5.0,
+                pool=5.0
+            )
+            client = httpx.AsyncClient(timeout=timeout)
             try:
                 req = client.build_request(
                             method=request.method,

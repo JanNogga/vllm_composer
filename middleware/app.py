@@ -2,6 +2,7 @@ import httpx
 import asyncio
 from datetime import datetime
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
@@ -14,18 +15,52 @@ def create_app(config_path="config.yml", secrets_path="secrets.yml"):
     composer = vllmComposer(config_path, secrets_path)
     app.state.composer = composer
 
+    # @asynccontextmanager
+    # async def lifespan(app: FastAPI):
+    #     # task for periodic refresh of models and metrics
+    #     models_task = asyncio.create_task(run_refresh_models())
+    #     metrics_task = asyncio.create_task(run_refresh_metrics())
+    #     try:
+    #         yield
+    #     finally:
+    #         # on shutdown
+    #         models_task.cancel()
+    #         metrics_task.cancel()
+    #         await asyncio.gather(models_task, metrics_task, return_exceptions=True)
+
+    # async def run_refresh_models():
+    #     while True:
+    #         await composer.refresh_models()
+    #         await asyncio.sleep(1)
+
+    # async def run_refresh_metrics():
+    #     while True:
+    #         await composer.refresh_metrics()
+    #         await asyncio.sleep(0.1)
+
+    executor = ThreadPoolExecutor(max_workers=1)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # task for periodic refresh of models and metrics
-        models_task = asyncio.create_task(run_refresh_models())
-        metrics_task = asyncio.create_task(run_refresh_metrics())
+        loop = asyncio.get_event_loop()
+        # Schedule tasks in dedicated threads
+        models_task = loop.run_in_executor(executor, run_refresh_models_sync)
+        metrics_task = loop.run_in_executor(executor, run_refresh_metrics_sync)
         try:
             yield
         finally:
-            # on shutdown
-            models_task.cancel()
-            metrics_task.cancel()
-            await asyncio.gather(models_task, metrics_task, return_exceptions=True)
+            # Cancel tasks on shutdown
+            executor.shutdown(wait=True)
+
+    def run_refresh_models_sync():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(run_refresh_models())
+
+    def run_refresh_metrics_sync():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(run_refresh_metrics())
 
     async def run_refresh_models():
         while True:

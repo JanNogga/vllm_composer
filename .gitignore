@@ -9,6 +9,7 @@ middleware/secrets.yml
 caddy/data/*
 caddy/config/*
 caddy/Caddyfile
+openwebui/data/*
 
 .coverage
 htmlcov/

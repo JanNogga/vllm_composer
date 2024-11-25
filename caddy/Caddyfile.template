@@ -17,6 +17,14 @@ https://api.somewhere.com {
         reverse_proxy middleware:9000
     }
 
+    handle /myopenwebuihandle/api/* {
+        respond "403 Forbidden" 403
+    }
+
+    handle /myopenwebuihandle {
+        reverse_proxy openwebui:9000
+    }
+
     handle {
         respond "404 Not Found" 404
     }

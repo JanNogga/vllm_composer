@@ -10,6 +10,7 @@ vllm_hosts:
       - "teaching"
       - "guest"
       - "legacy"
+      - "openwebui"
   - hostname: "http://myothervllmserver"
     ports:
       start: 8004
@@ -21,6 +22,7 @@ vllm_hosts:
       - "teaching"
       - "guest"
       - "legacy"
+      - "openwebui"
   - hostname: "http://mythirdvllmserver"
     ports:
       start: 9962
@@ -32,6 +34,7 @@ vllm_hosts:
       - "teaching"
       - "guest"
       - "legacy"
+      - "openwebui"
 app_settings:
   model_owner: "me"
   max_failures: 3

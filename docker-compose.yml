@@ -28,6 +28,25 @@ services:
     networks:
       - internal_network
 
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: openwebui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    environment:
+      - DEFAULT_USER_ROLE=user
+      - ENABLE_ADMIN_CHAT_ACCESS=False
+      - ENABLE_COMMUNITY_SHARING=False
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ENABLE_OLLAMA_API=False
+      - OPENAI_API_BASE_URLS=middleware:9000
+      - OPENAI_API_KEYS=${OPENWEBUI_GROUP_KEY}
+    volumes:
+      - ./openwebui/data:/app/backend/data
+    networks:
+      - internal_network
+
 networks:
   internal_network:
     driver: bridge

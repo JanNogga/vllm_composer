@@ -35,7 +35,7 @@ services:
     ports:
       - "3000:8080"
     environment:
-      - DEFAULT_USER_ROLE=user
+      - DEFAULT_USER_ROLE=pending
       - ENABLE_ADMIN_CHAT_ACCESS=False
       - ENABLE_COMMUNITY_SHARING=False
       - ADMIN_EMAIL=${ADMIN_EMAIL}

@@ -17,4 +17,5 @@ pub use models::{
 pub use proxy::{
     chat_completions_handler,
     embeddings_handler,
+    chat_completions_handler_legacy,
 };

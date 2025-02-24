@@ -114,7 +114,9 @@ pub async fn chat_completions_handler(
                     .streaming(byte_stream)
             } else {
                 let text = resp.text().await.unwrap_or_default();
-                HttpResponse::build(status).body(text)
+                HttpResponse::build(status)
+                    .content_type("application/json")
+                    .body(text)
             }
         }
         Err(e) => HttpResponse::InternalServerError().body(format!("Forward request failed: {}", e)),
@@ -198,7 +200,9 @@ pub async fn embeddings_handler(
         Ok(resp) => {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            HttpResponse::build(status).body(text)
+            HttpResponse::build(status)
+                .content_type("application/json")
+                .body(text)
         }
         Err(e) => HttpResponse::InternalServerError().body(format!("Forward request failed: {}", e)),
     }
@@ -306,7 +310,9 @@ pub async fn chat_completions_handler_legacy(
                     .streaming(byte_stream)
             } else {
                 let text = resp.text().await.unwrap_or_default();
-                HttpResponse::build(status).body(text)
+                HttpResponse::build(status)
+                    .content_type("application/json")
+                    .body(text)
             }
         }
         Err(e) => HttpResponse::InternalServerError().body(format!("Forward request failed: {}", e)),

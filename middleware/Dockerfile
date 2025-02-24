@@ -5,7 +5,7 @@ COPY . .
 RUN cargo build --release
 
 # Runtime stage
-FROM debian:buster-slim
+FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace
 COPY --from=builder /workspace/target/release/vllm_middleware /usr/local/bin/vllm_middleware

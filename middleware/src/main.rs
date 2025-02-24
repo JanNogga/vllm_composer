@@ -6,7 +6,6 @@ use log::debug;
 use std::collections::HashMap;
 use std::io;
 use std::sync::{Arc, Mutex};
-use std::env;
 
 // Internal modules
 mod auth;

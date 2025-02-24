@@ -1,6 +1,6 @@
 # vllm_composer
 
-Functionality for setting up a reverse proxy to compose multiple [vLLM](https://github.com/vllm-project/vllm) serving instances. Includes basic load balancing per hosted model. Much heavy lifting is done by [Caddy](https://github.com/caddyserver/caddy)
+Functionality for setting up a reverse proxy to compose multiple [vLLM](https://github.com/vllm-project/vllm) serving instances. Includes basic load balancing per hosted model. Much heavy lifting is done by [Caddy](https://github.com/caddyserver/caddy).
 
 ## Setup
 
@@ -21,7 +21,7 @@ Functionality for setting up a reverse proxy to compose multiple [vLLM](https://
 
 4. **Configure the Environment Variables**
 
-   Open the `.env` file in a text editor (e.g., `vim .env`) and set the path to the SSL certificate and key.
+   Open the `.env` file in a text editor (e.g., `vim .env`) and set the path to the SSL certificate and key. If you like you can also configure [Open WebUI](https://github.com/open-webui/open-webui) there.
 
 5. **Navigate to the Middleware Directory**
    ```bash
@@ -30,21 +30,21 @@ Functionality for setting up a reverse proxy to compose multiple [vLLM](https://
 
 6. **Copy the Configuration Template**
    ```bash
-   cp config.yml.template config.yml
+   cp endpoints.yaml.template endpoints.yml
    ```
 
 7. **Configure the Middleware Settings**
 
-   Open the `config.yml` file in a text editor (e.g., `vim config.yml`) and configure the servers and app settings.
+   Open the `endpoints.yaml` file in a text editor (e.g., `vim endpoints.yaml`) and configure the vLLM server settings.
 
 8. **Copy the Secrets Template**
    ```bash
-   cp secrets.yml.template secrets.yml
+   cp secrets.yaml.template secrets.yaml
    ```
 
 9. **Configure the Secrets**
 
-   Open the `secrets.yml` file in a text editor (e.g., `vim secrets.yml`) and configure the tokens and user groups.
+   Open the `secrets.yaml` file in a text editor (e.g., `vim secrets.yaml`) and configure the tokens and user access groups.
 
 10. **Navigate to the Caddy Directory**
     ```bash
@@ -66,8 +66,10 @@ Functionality for setting up a reverse proxy to compose multiple [vLLM](https://
     cd .. && docker compose build
     ```
 
-14. **Start caddy and middleware**
+14. **Start caddy, open-webui and middleware**
 
     ```bash
     docker compose up -d
     ```
+
+Note that it is also possible to use only the middleware and caddy without open-webui or only the middleware without anything else. Just adjust `docker-compose.yml` accordingly.

@@ -23,8 +23,8 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     volumes:
-      - ./middleware/config.yml:/app/config.yml
-      - ./middleware/secrets.yml:/app/secrets.yml
+      - ./middleware/endpoints.yaml:/workspace/endpoints.yaml
+      - ./middleware/secrets.yaml:/workspace/secrets.yaml
     networks:
       - internal_network
 

@@ -1,11 +1,13 @@
-FROM python:3.10-slim
+# Build stage
+FROM rust:latest AS builder
+WORKDIR /workspace
+COPY . .
+RUN cargo build --release
 
-WORKDIR /app
-
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py config.yml secrets.yml vllmComposer.py main.py ./
-
+# Runtime stage
+FROM debian:buster-slim
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY --from=builder /workspace/target/release/vllm_middleware /usr/local/bin/vllm_middleware
 EXPOSE 9000
-
-ENTRYPOINT ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9000"]
+ENTRYPOINT ["/usr/local/bin/vllm_middleware", "9000"]

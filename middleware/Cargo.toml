@@ -1,0 +1,16 @@
+[package]
+name = "vllm_middleware"
+version = "0.2.0"
+edition = "2024"
+
+[dependencies]
+actix-web = "4"
+futures = "0.3"
+futures-util = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+reqwest = { version = "0.11", features = ["json", "stream"] }
+tokio = { version = "1", features = ["full"] }
+log = "0.4"
+env_logger = "0.9"

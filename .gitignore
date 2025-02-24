@@ -1,17 +1,13 @@
 .vscode
-__pycache__
-app.log
 .env
 
-middleware/config.yml
-middleware/secrets.yml
+middleware/endpoints.yaml
+middleware/secrets.yaml
+middleware/target/*
 
 caddy/data/*
 caddy/config/*
 caddy/Caddyfile
 openwebui/data/*
-
-.coverage
-htmlcov/
 
 !.gitkeep

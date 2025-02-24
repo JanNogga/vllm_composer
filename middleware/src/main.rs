@@ -1,6 +1,6 @@
 // External crates
 use actix_web::{web, App, HttpServer};
-use log::debug;
+use log::{debug, info};
 
 // Standard library
 use std::collections::HashMap;

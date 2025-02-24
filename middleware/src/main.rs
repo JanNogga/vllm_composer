@@ -21,6 +21,7 @@ use routes::{
     model_to_endpoints_handler,
     chat_completions_handler,
     embeddings_handler,
+    chat_completions_handler_legacy,
 };
 
 mod state;
@@ -41,6 +42,7 @@ use monitoring::monitor_endpoint;
 async fn main() -> io::Result<()> {
     env_logger::init();
     debug!("Logger activated.");
+    info!("vllm_middleware started.");
 
     // Load initial endpoints
     let all_endpoints = load_endpoints_from_yaml().unwrap_or_else(|_| Vec::new());
@@ -97,6 +99,7 @@ async fn main() -> io::Result<()> {
             .route("/health", web::get().to(health_handler))
             .route("/v1/chat/completions", web::post().to(chat_completions_handler))
             .route("/v1/embeddings", web::post().to(embeddings_handler))
+            .route("/v1/completions", web::get().to(chat_completions_handler_legacy))
     })
     .bind(bind_address)?
     .run()

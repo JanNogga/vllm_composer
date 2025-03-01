@@ -4,6 +4,7 @@ WORKDIR /workspace
 
 # Cache dependencies:
 COPY Cargo.toml ./
+RUN cargo generate-lockfile
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 RUN cargo build --release
 RUN rm -rf src

@@ -10,6 +10,7 @@ RUN cargo build --release
 RUN rm -rf src
 # Copy the full source code and rebuild
 COPY . .
+RUN touch src/main.rs
 RUN cargo build --release
 
 # Runtime stage

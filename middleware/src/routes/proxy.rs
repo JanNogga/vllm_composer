@@ -1,7 +1,7 @@
 // External crates
 use actix_web::{web, HttpMessage, HttpRequest, HttpResponse, Responder};
-use futures_util::{Stream, StreamExt, TryStreamExt};
-use log::{info, error};
+use futures_util::{Stream, StreamExt};
+use log::info;
 use reqwest::Client;
 use serde_json::Value;
 use bytes::Bytes;
@@ -252,7 +252,7 @@ pub async fn embeddings_handler(
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(90))
             .build()
-            .unwrap()
+            .unwrap();
     let forward_resp = client
         .post(forward_url)
         .bearer_auth(&target_endpoint.access_token)

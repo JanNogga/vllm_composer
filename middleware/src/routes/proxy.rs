@@ -1,6 +1,6 @@
 // External crates
 use actix_web::{web, HttpMessage, HttpRequest, HttpResponse, Responder};
-use futures_util::{Stream, TryStreamExt};
+use futures_util::{Stream, StreamExt, TryStreamExt};
 use log::{info, error};
 use reqwest::Client;
 use serde_json::Value;

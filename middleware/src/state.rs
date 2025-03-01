@@ -1,12 +1,14 @@
 // External crates
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use log::info;
 
 // Standard library
 use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::sync::Mutex;
+use std::path::Path;
 
 // -----------------------------------------------------------------------------
 // Structures
@@ -37,7 +39,9 @@ pub struct Secrets {
 // YAML Loading Functions
 // -----------------------------------------------------------------------------
 pub fn load_auth_tokens_from_yaml() -> Result<HashMap<String, Vec<String>>, Box<dyn std::error::Error>> {
-    let contents = std::fs::read_to_string("secrets.yaml")?;
+    let path = Path::new("secrets.yaml").canonicalize()?;
+    log::info!("Load secrets from: {}", path.display());
+    let contents = fs::read_to_string(&path)?;
     let secrets: Secrets = serde_yaml::from_str(&contents)?;
     let mut tokens = HashMap::new();
     for group_map in secrets.groups {
@@ -49,7 +53,9 @@ pub fn load_auth_tokens_from_yaml() -> Result<HashMap<String, Vec<String>>, Box<
 }
 
 pub fn load_endpoints_from_yaml() -> io::Result<Vec<Endpoint>> {
-    let contents = fs::read_to_string("endpoints.yaml")?;
+    let path = Path::new("endpoints.yaml").canonicalize()?;
+    log::info!("Load endpoints from: {}", path.display());
+    let contents = fs::read_to_string(&path)?;
     let raw_endpoints: Vec<serde_yaml::Value> = serde_yaml::from_str(&contents).map_err(|e| {
         io::Error::new(io::ErrorKind::InvalidData, format!("YAML parse error: {}", e))
     })?;

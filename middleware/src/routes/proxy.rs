@@ -2,8 +2,9 @@
 use actix_web::{web, HttpMessage, HttpRequest, HttpResponse, Responder};
 use futures_util::TryStreamExt;
 use log::info;
-use reqwest;
+use reqwest::Client;
 use serde_json::Value;
+use std::time::Duration;
 
 // Standard library
 use std::sync::Arc;
@@ -87,7 +88,23 @@ pub async fn chat_completions_handler(
 
     // 8. Forward the entire request body
     let forward_url = format!("{}/v1/chat/completions", target_endpoint.url);
-    let client = reqwest::Client::new();
+
+    // Set up the client
+    let client_builder = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5));
+    let client = if stream_requested {
+        client_builder
+            // For streaming wait for any chunk for 30 seconds.
+            .read_timeout(Duration::from_secs(30))
+            .build()
+            .unwrap()
+    } else {
+        client_builder
+            // For non-streaming block for a maximum of 90 seconds.
+            .timeout(Duration::from_secs(90))
+            .build()
+            .unwrap()
+    };
     let forward_resp = client
         .post(forward_url)
         .bearer_auth(&target_endpoint.access_token)
@@ -186,9 +203,12 @@ pub async fn embeddings_handler(
         "forwarded embed request for model {} to endpoint {}",
         model_id, target_endpoint.url
     );
-
     let forward_url = format!("{}/v1/embeddings", target_endpoint.url);
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(5));
+            .timeout(Duration::from_secs(90))
+            .build()
+            .unwrap()
     let forward_resp = client
         .post(forward_url)
         .bearer_auth(&target_endpoint.access_token)
@@ -283,7 +303,23 @@ pub async fn chat_completions_handler_legacy(
 
     // 8. Forward the entire request body
     let forward_url = format!("{}/v1/completions", target_endpoint.url);
-    let client = reqwest::Client::new();
+
+    // Set up the client
+    let client_builder = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5));
+    let client = if stream_requested {
+        client_builder
+            // For streaming wait for any chunk for 30 seconds.
+            .read_timeout(Duration::from_secs(30))
+            .build()
+            .unwrap()
+    } else {
+        client_builder
+            // For non-streaming block for a maximum of 90 seconds.
+            .timeout(Duration::from_secs(90))
+            .build()
+            .unwrap()
+    };
     let forward_resp = client
         .post(forward_url)
         .bearer_auth(&target_endpoint.access_token)

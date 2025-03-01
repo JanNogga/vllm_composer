@@ -23,8 +23,14 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     volumes:
-      - ./middleware/endpoints.yaml:/workspace/endpoints.yaml
-      - ./middleware/secrets.yaml:/workspace/secrets.yaml
+      - type: bind
+        source: ./middleware/endpoints.yaml
+        target: /workspace/endpoints.yaml
+        consistency: consistent
+      - type: bind
+        source: ./middleware/secrets.yaml
+        target: /workspace/secrets.yaml
+        consistency: consistent
     networks:
       - internal_network
 

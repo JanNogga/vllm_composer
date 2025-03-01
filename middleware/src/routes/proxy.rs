@@ -1,17 +1,62 @@
 // External crates
 use actix_web::{web, HttpMessage, HttpRequest, HttpResponse, Responder};
-use futures_util::TryStreamExt;
-use log::info;
+use futures_util::{Stream, TryStreamExt};
+use log::{info, error};
 use reqwest::Client;
 use serde_json::Value;
-use std::time::Duration;
+use bytes::Bytes;
+use tokio::time::timeout;
+use async_stream::try_stream;
+
 
 // Standard library
 use std::sync::Arc;
+use std::io::{Error as IoError, ErrorKind};
+use std::time::Duration;
 
 // Internal modules
 use crate::auth::AuthInfo;
 use crate::state::{AppState, Endpoint};
+
+
+// Helpers
+fn stream_with_read_timeout<S>(
+    upstream: S,
+) -> impl Stream<Item = Result<Bytes, IoError>>
+where
+    S: Stream<Item = reqwest::Result<Bytes>> + Unpin,
+{
+    try_stream! {
+        let mut resp_stream = upstream;
+
+        // Loop over each chunk, applying a 30s timeout per chunk
+        loop {
+            // Wait up to 30s for the next chunk
+            let next_chunk = match timeout(Duration::from_secs(30), resp_stream.next()).await {
+                Ok(res) => res,                 // We got either Some(...) or None from the stream
+                Err(_) => {
+                    // Timed out waiting for the chunk
+                    Err(IoError::new(ErrorKind::TimedOut, "Read timed out"))?
+                }
+            };
+
+            match next_chunk {
+                Some(Ok(chunk)) => {
+                    // Successfully got one chunk
+                    yield chunk;
+                }
+                Some(Err(e)) => {
+                    // Convert reqwest error into IoError
+                    Err(IoError::new(ErrorKind::Other, e))?;
+                }
+                None => {
+                    // Stream ended
+                    break;
+                }
+            }
+        }
+    }
+}
 
 // -- Handler: /v1/chat/completions (for generate) ----------------------------
 pub async fn chat_completions_handler(
@@ -94,15 +139,13 @@ pub async fn chat_completions_handler(
         .connect_timeout(Duration::from_secs(5));
     let client = if stream_requested {
         client_builder
-            // For streaming wait for any chunk for 30 seconds.
-            .read_timeout(Duration::from_secs(30))
             .build()
             .unwrap()
     } else {
         client_builder
             // For non-streaming block for a maximum of 90 seconds.
             .timeout(Duration::from_secs(90))
-            .build()
+            .build()    
             .unwrap()
     };
     let forward_resp = client
@@ -126,9 +169,12 @@ pub async fn chat_completions_handler(
                 let byte_stream = resp.bytes_stream().map_err(|err| {
                     std::io::Error::new(std::io::ErrorKind::Other, err)
                 });
+                // Wrap the original stream per-chunk timeout logic
+                let timed_stream = stream_with_read_timeout(byte_stream);
                 HttpResponse::build(status)
                     .content_type(content_type)
-                    .streaming(byte_stream)
+                    // Pass the *new* timed_stream to Actix
+                    .streaming(timed_stream)
             } else {
                 let text = resp.text().await.unwrap_or_default();
                 HttpResponse::build(status)
@@ -309,15 +355,13 @@ pub async fn chat_completions_handler_legacy(
         .connect_timeout(Duration::from_secs(5));
     let client = if stream_requested {
         client_builder
-            // For streaming wait for any chunk for 30 seconds.
-            .read_timeout(Duration::from_secs(30))
             .build()
             .unwrap()
     } else {
         client_builder
             // For non-streaming block for a maximum of 90 seconds.
             .timeout(Duration::from_secs(90))
-            .build()
+            .build()    
             .unwrap()
     };
     let forward_resp = client
@@ -341,9 +385,12 @@ pub async fn chat_completions_handler_legacy(
                 let byte_stream = resp.bytes_stream().map_err(|err| {
                     std::io::Error::new(std::io::ErrorKind::Other, err)
                 });
+                // Wrap the original stream per-chunk timeout logic
+                let timed_stream = stream_with_read_timeout(byte_stream);
                 HttpResponse::build(status)
                     .content_type(content_type)
-                    .streaming(byte_stream)
+                    // Pass the *new* timed_stream to Actix
+                    .streaming(timed_stream)
             } else {
                 let text = resp.text().await.unwrap_or_default();
                 HttpResponse::build(status)

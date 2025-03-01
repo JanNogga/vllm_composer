@@ -166,9 +166,7 @@ pub async fn chat_completions_handler(
                     .and_then(|v| v.to_str().ok())
                     .unwrap_or("application/octet-stream")
                     .to_string();
-                let byte_stream = resp.bytes_stream().map_err(|err| {
-                    std::io::Error::new(std::io::ErrorKind::Other, err)
-                });
+                let byte_stream = resp.bytes_stream();
                 // Wrap the original stream per-chunk timeout logic
                 let timed_stream = stream_with_read_timeout(byte_stream);
                 HttpResponse::build(status)
@@ -251,7 +249,7 @@ pub async fn embeddings_handler(
     );
     let forward_url = format!("{}/v1/embeddings", target_endpoint.url);
     let client = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(5));
+            .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(90))
             .build()
             .unwrap()
@@ -382,9 +380,7 @@ pub async fn chat_completions_handler_legacy(
                     .and_then(|v| v.to_str().ok())
                     .unwrap_or("application/octet-stream")
                     .to_string();
-                let byte_stream = resp.bytes_stream().map_err(|err| {
-                    std::io::Error::new(std::io::ErrorKind::Other, err)
-                });
+                let byte_stream = resp.bytes_stream();
                 // Wrap the original stream per-chunk timeout logic
                 let timed_stream = stream_with_read_timeout(byte_stream);
                 HttpResponse::build(status)

@@ -39,7 +39,7 @@ pub struct Secrets {
 // YAML Loading Functions
 // -----------------------------------------------------------------------------
 pub fn load_auth_tokens_from_yaml() -> Result<HashMap<String, Vec<String>>, Box<dyn std::error::Error>> {
-    let path = Path::new("secrets.yaml").canonicalize()?;
+    let path = Path::new("/workspace/secrets.yaml");
     info!("Load secrets from: {}", path.display());
     let contents = fs::read_to_string(&path)?;
     let secrets: Secrets = serde_yaml::from_str(&contents)?;
@@ -53,7 +53,7 @@ pub fn load_auth_tokens_from_yaml() -> Result<HashMap<String, Vec<String>>, Box<
 }
 
 pub fn load_endpoints_from_yaml() -> io::Result<Vec<Endpoint>> {
-    let path = Path::new("endpoints.yaml").canonicalize()?;
+    let path = Path::new("/workspace/endpoints.yaml");
     info!("Load endpoints from: {}", path.display());
     let contents = fs::read_to_string(&path)?;
     let raw_endpoints: Vec<serde_yaml::Value> = serde_yaml::from_str(&contents).map_err(|e| {

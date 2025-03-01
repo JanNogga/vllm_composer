@@ -2,7 +2,7 @@
 use actix_web::{web, HttpMessage, HttpRequest, HttpResponse, Responder};
 use futures_util::{Stream, StreamExt};
 use log::info;
-use reqwest::Client;
+use reqwest;
 use serde_json::Value;
 use bytes::Bytes;
 use tokio::time::timeout;
